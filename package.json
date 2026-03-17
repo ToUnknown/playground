@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "deploy:convex:prod": "convex deploy --env-file .env.convex.prod",
     "deploy:partykit": "partykit deploy partykit/server.ts"
   },
   "dependencies": {
