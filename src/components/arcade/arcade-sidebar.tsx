@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { anyApi } from "convex/server";
 import { useQuery } from "convex/react";
-import { startTransition, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import type { GameManifest, LeaderboardEntry, PersonalBest, SessionUser } from "@/lib/contracts";
 import { gameRegistry } from "@/lib/game-registry";
@@ -54,7 +53,6 @@ function SessionCard({
   game: GameManifest | null;
   showBest: boolean;
 }) {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
   const { available } = useConvexAvailability();
   const mode = game?.modes[0]?.id ?? "solo";
@@ -142,13 +140,10 @@ function SessionCard({
               width: "100%",
             }}
             disabled={pending}
-            onClick={() => {
+            onClick={async () => {
               setPending(true);
-              startTransition(async () => {
-                await fetch("/api/auth/logout", { method: "POST" });
-                router.refresh();
-                setPending(false);
-              });
+              await fetch("/api/auth/logout", { method: "POST" });
+              window.location.assign("/enter");
             }}
           >
             {pending ? "..." : "Log out"}
