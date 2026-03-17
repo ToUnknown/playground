@@ -1,7 +1,6 @@
 "use client";
 
-import { startTransition, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
 
@@ -14,7 +13,6 @@ type FlowState = {
 };
 
 export function EnterForm() {
-  const router = useRouter();
   const [state, setState] = useState<FlowState>({
     username: "",
     password: "",
@@ -62,10 +60,7 @@ export function EnterForm() {
       return;
     }
 
-    startTransition(() => {
-      router.refresh();
-      router.push("/");
-    });
+    window.location.assign("/");
   }
 
   return (
@@ -78,17 +73,19 @@ export function EnterForm() {
           transform: "translate(-50%, -50%)",
           width: "360px",
           maxWidth: "calc(100vw - 48px)",
+          zIndex: 1,
         }}
       >
         <div
           className="enter-simple-card"
           style={{
             width: "100%",
-            padding: "28px 24px 24px",
+            padding: "18px",
             borderRadius: "28px",
-            border: "1px solid rgba(123, 138, 185, 0.22)",
-            background: "rgba(5, 6, 10, 0.98)",
-            boxShadow: "0 24px 100px rgba(0, 0, 0, 0.45)",
+            border: "1px solid rgba(183, 190, 159, 0.16)",
+            background: "rgba(10, 14, 9, 0.18)",
+            backdropFilter: "blur(8px)",
+            boxShadow: "none",
           }}
         >
           <form
@@ -96,7 +93,7 @@ export function EnterForm() {
               display: "flex",
               flexDirection: "column",
               width: "100%",
-              gap: "12px",
+              gap: "10px",
             }}
             onSubmit={(event) => {
               event.preventDefault();
@@ -105,17 +102,18 @@ export function EnterForm() {
           >
             <div
               style={{
-                color: "#74f7b2",
-                fontSize: "1.6rem",
+                color: "#d2df93",
+                fontSize: "2rem",
                 fontFamily: "var(--font-display)",
                 lineHeight: "1.05",
                 letterSpacing: "0.04em",
-                textAlign: "center",
                 textTransform: "uppercase",
-                marginBottom: "10px",
+                paddingTop: "6px",
+                marginBottom: "12px",
+                textAlign: "center",
               }}
             >
-              Friends Arcade
+              Playdround
             </div>
             <input
               name="username"
@@ -138,19 +136,19 @@ export function EnterForm() {
                 borderRadius: "18px",
                 border:
                   focusedInput === "username"
-                    ? "1px solid rgba(116, 247, 178, 0.52)"
+                    ? "1px solid rgba(210, 223, 147, 0.34)"
                     : hoveredInput === "username"
-                      ? "1px solid rgba(116, 247, 178, 0.3)"
-                      : "1px solid rgba(123, 138, 185, 0.22)",
+                      ? "1px solid rgba(183, 190, 159, 0.22)"
+                      : "1px solid rgba(183, 190, 159, 0.12)",
                 background:
                   focusedInput === "username"
-                    ? "rgba(255, 255, 255, 0.05)"
+                    ? "rgba(12, 18, 10, 0.38)"
                     : hoveredInput === "username"
-                      ? "rgba(255, 255, 255, 0.045)"
-                      : "rgba(255, 255, 255, 0.03)",
+                      ? "rgba(12, 18, 10, 0.32)"
+                      : "rgba(10, 14, 9, 0.28)",
                 boxShadow:
                   focusedInput === "username"
-                    ? "0 0 0 4px rgba(116, 247, 178, 0.08)"
+                    ? "inset 0 1px 0 rgba(210, 223, 147, 0.05), 0 0 0 4px rgba(139, 172, 15, 0.08)"
                     : "none",
                 color: "#f4f2ed",
                 padding: "0 18px",
@@ -184,19 +182,19 @@ export function EnterForm() {
                 borderRadius: "18px",
                 border:
                   focusedInput === "password"
-                    ? "1px solid rgba(116, 247, 178, 0.52)"
+                    ? "1px solid rgba(210, 223, 147, 0.34)"
                     : hoveredInput === "password"
-                      ? "1px solid rgba(116, 247, 178, 0.3)"
-                      : "1px solid rgba(123, 138, 185, 0.22)",
+                      ? "1px solid rgba(183, 190, 159, 0.22)"
+                      : "1px solid rgba(183, 190, 159, 0.12)",
                 background:
                   focusedInput === "password"
-                    ? "rgba(255, 255, 255, 0.05)"
+                    ? "rgba(12, 18, 10, 0.38)"
                     : hoveredInput === "password"
-                      ? "rgba(255, 255, 255, 0.045)"
-                      : "rgba(255, 255, 255, 0.03)",
+                      ? "rgba(12, 18, 10, 0.32)"
+                      : "rgba(10, 14, 9, 0.28)",
                 boxShadow:
                   focusedInput === "password"
-                    ? "0 0 0 4px rgba(116, 247, 178, 0.08)"
+                    ? "inset 0 1px 0 rgba(210, 223, 147, 0.05), 0 0 0 4px rgba(139, 172, 15, 0.08)"
                     : "none",
                 color: "#f4f2ed",
                 padding: "0 18px",
@@ -218,23 +216,24 @@ export function EnterForm() {
               onMouseLeave={() => setButtonHovered(false)}
               style={{
                 width: "100%",
-                height: "58px",
+                minHeight: "46px",
                 marginTop: "8px",
-                border: "none",
+                border: "1px solid rgba(183, 190, 159, 0.16)",
                 borderRadius: "999px",
-                background: buttonHovered
-                  ? "linear-gradient(135deg, #2daf78 0%, #63d8a6 100%)"
-                  : "linear-gradient(135deg, #3bcf91 0%, #77e7bb 100%)",
+                background: buttonHovered ? "rgba(47, 71, 34, 0.28)" : "rgba(126, 138, 179, 0.1)",
                 boxShadow: buttonHovered
-                  ? "0 12px 34px rgba(59, 207, 145, 0.22)"
+                  ? "inset 0 1px 0 rgba(210, 223, 147, 0.06)"
                   : "none",
-                color: "#07130f",
+                color: "#d2df93",
                 fontSize: "1rem",
                 appearance: "none",
                 WebkitAppearance: "none",
                 transform: buttonHovered ? "translateY(-1px)" : "translateY(0)",
-                transition: "transform 160ms ease, background 160ms ease, box-shadow 160ms ease",
+                transition:
+                  "transform 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease",
                 cursor: state.pending ? "wait" : "pointer",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
               }}
             >
               {state.pending ? "..." : "Enter"}

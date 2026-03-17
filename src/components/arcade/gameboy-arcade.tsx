@@ -7,6 +7,7 @@ import type {
   GameboyControlPulse,
   GameboyPressedButtons,
 } from "@/components/arcade/gameboy-games";
+import { GameboyCursorField } from "@/components/backgrounds/gameboy-cursor-field";
 import type { GameboyMusicTrack } from "@/lib/gameboy-audio";
 import type { SessionUser } from "@/lib/contracts";
 import { gameRegistry } from "@/lib/game-registry";
@@ -56,6 +57,7 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
   const [controlPulse, setControlPulse] = useState<GameboyControlPulse | null>(null);
   const [pressedButtons, setPressedButtons] = useState<GameboyPressedButtons>({});
   const [musicTrack, setMusicTrack] = useState<GameboyMusicTrack | null>(null);
+  const [hoveringModel, setHoveringModel] = useState(false);
   const [viewport, setViewport] = useState({ width: 1440, height: 900 });
   const controlSourcesRef = useRef<Map<GameboyControlButton, Set<string>>>(new Map());
   const { playCue, unlockAudio } = useGameboyAudio({
@@ -199,6 +201,12 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
     return () => window.clearTimeout(readyTimer);
   }, [poweredOn]);
 
+  useEffect(() => {
+    if (!poweredOn) {
+      setHoveringModel(false);
+    }
+  }, [poweredOn]);
+
   const stacked = viewport.width < 980;
   const stageHeight = useMemo(
     () =>
@@ -226,19 +234,21 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
     <main
       style={{
         ...pageShellStyle,
-        position: stacked ? "fixed" : "static",
+        position: stacked ? "fixed" : "relative",
         inset: stacked ? 0 : undefined,
         width: stacked ? "100vw" : "100%",
         minHeight: stacked ? "100dvh" : "100vh",
         height: stacked ? "100dvh" : "100vh",
         padding: stacked ? 0 : pageShellStyle.padding,
+        isolation: "isolate",
         display: "grid",
         gridTemplateColumns: stacked ? "1fr" : "minmax(0, 1fr) 360px",
         gap: stacked ? 0 : "28px",
         overflow: "hidden",
-        background: "#000000",
+        background: poweredOn ? "var(--gameboy-screen-bg)" : "#000000",
       }}
     >
+      {poweredOn ? <GameboyCursorField variant="arcade" mouseReactive={!hoveringModel} /> : null}
       <section
         style={{
           display: "flex",
@@ -248,6 +258,8 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
           minHeight: stacked ? "100dvh" : undefined,
           overflow: "hidden",
           padding: stacked ? 0 : "8px 0",
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <div
@@ -266,6 +278,7 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
             controlPulse={controlPulse}
             pressedButtons={pressedButtons}
             onControlButtonChange={applyControlState}
+            onModelHoverChange={setHoveringModel}
             onSelectGame={setSelectedGameId}
             onAudioCue={playCue}
             onMusicTrackChange={setMusicTrack}
@@ -274,12 +287,14 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
       </section>
 
       {!stacked ? (
-        <ArcadeSidebar
-          selectedGameId={selectedGame.id}
-          sessionUser={sessionUser}
-          height={stageHeight}
-          showLeaderboard={leaderboardReady && Boolean(selectedGame)}
-        />
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <ArcadeSidebar
+            selectedGameId={selectedGame.id}
+            sessionUser={sessionUser}
+            height={stageHeight}
+            showLeaderboard={leaderboardReady && Boolean(selectedGame)}
+          />
+        </div>
       ) : null}
       <div
         style={{

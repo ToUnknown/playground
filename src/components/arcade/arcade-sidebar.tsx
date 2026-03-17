@@ -13,8 +13,9 @@ import { useConvexAvailability } from "@/components/providers/convex-provider";
 const sideCardStyle: CSSProperties = {
   border: "1px solid rgba(183, 190, 159, 0.16)",
   borderRadius: "28px",
-  background: "#000000",
-  boxShadow: "0 24px 80px rgba(0, 0, 0, 0.26)",
+  background: "rgba(10, 14, 9, 0.18)",
+  backdropFilter: "blur(8px)",
+  boxShadow: "none",
   padding: "18px",
 };
 
@@ -46,12 +47,17 @@ const LEADERBOARD_FADE_MS = 220;
 
 function SessionCard({
   sessionUser,
+  game,
+  showBest,
 }: {
   sessionUser: SessionUser | null;
+  game: GameManifest | null;
+  showBest: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const { available } = useConvexAvailability();
+  const mode = game?.modes[0]?.id ?? "solo";
   const personalBests = useQuery(
     anyApi.scores.getPersonalBests,
     available && sessionUser
@@ -60,9 +66,10 @@ function SessionCard({
         }
       : "skip",
   ) as PersonalBest[] | undefined;
-  const totalPoints = useMemo(
-    () => personalBests?.reduce((sum, entry) => sum + entry.score, 0) ?? 0,
-    [personalBests],
+  const bestForGame = useMemo(
+    () =>
+      game ? personalBests?.find((entry) => entry.gameId === game.id && entry.mode === mode) ?? null : null,
+    [game, mode, personalBests],
   );
 
   return (
@@ -83,7 +90,6 @@ function SessionCard({
             fontFamily: '"Rajdhani", sans-serif',
             fontSize: "2rem",
             letterSpacing: "0.04em",
-            textTransform: "uppercase",
             minWidth: 0,
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -92,38 +98,40 @@ function SessionCard({
         >
           {sessionUser?.username ?? "Guest"}
         </strong>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            flexShrink: 0,
-            lineHeight: 1,
-          }}
-        >
-          <strong
+        {showBest && game ? (
+          <div
             style={{
-              fontFamily: '"Rajdhani", sans-serif',
-              fontSize: "1.65rem",
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-              color: "#f4f2ed",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              flexShrink: 0,
+              lineHeight: 1,
             }}
           >
-            {totalPoints}
-          </strong>
-          <span
-            style={{
-              marginTop: "4px",
-              color: "#b9bfd6",
-              fontSize: "0.76rem",
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-            }}
-          >
-            points
-          </span>
-        </div>
+            <strong
+              style={{
+                fontFamily: '"Rajdhani", sans-serif',
+                fontSize: "1.65rem",
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: bestForGame ? game.accent : "#f4f2ed",
+              }}
+            >
+              {bestForGame?.score ?? "--"}
+            </strong>
+            <span
+              style={{
+                marginTop: "4px",
+                color: "#b9bfd6",
+                fontSize: "0.76rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
+              Best {game.name}
+            </span>
+          </div>
+        ) : null}
       </div>
       {sessionUser ? (
         <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
@@ -157,39 +165,11 @@ function SessionCard({
 
 function LeaderboardCard({
   game,
-  sessionUser,
+  leaderboard,
 }: {
   game: GameManifest;
-  sessionUser: SessionUser | null;
+  leaderboard: LeaderboardEntry[];
 }) {
-  const { available } = useConvexAvailability();
-  const mode = game.modes[0]?.id ?? "solo";
-
-  const leaderboard = useQuery(
-    anyApi.scores.getGlobalLeaderboard,
-    available
-      ? {
-          gameId: game.id,
-          mode,
-          limit: 5,
-        }
-      : "skip",
-  ) as LeaderboardEntry[] | undefined;
-
-  const personalBests = useQuery(
-    anyApi.scores.getPersonalBests,
-    available && sessionUser
-      ? {
-          userId: sessionUser.userId as never,
-        }
-      : "skip",
-  ) as PersonalBest[] | undefined;
-
-  const bestForGame = useMemo(
-    () => personalBests?.find((entry) => entry.gameId === game.id && entry.mode === mode) ?? null,
-    [game.id, mode, personalBests],
-  );
-
   return (
     <div
       style={{
@@ -221,30 +201,6 @@ function LeaderboardCard({
             {game.name}
           </h2>
         </div>
-        {bestForGame ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
-            <small
-              style={{
-                color: "#b9bfd6",
-                fontSize: "0.78rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
-              }}
-            >
-              Best
-            </small>
-            <strong
-              style={{
-                color: game.accent,
-                fontFamily: '"Rajdhani", sans-serif',
-                fontSize: "1.8rem",
-                letterSpacing: "0.04em",
-              }}
-            >
-              {bestForGame.score}
-            </strong>
-          </div>
-        ) : null}
       </div>
       <div
         style={{
@@ -255,23 +211,23 @@ function LeaderboardCard({
           overflowY: "auto",
         }}
       >
-        {available ? (
-          leaderboard?.length ? (
-            leaderboard.map((entry, index) => (
-              <div
-                key={`${entry.userId}-${entry.rank}`}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "24px minmax(0, 1fr) auto",
-                  gap: "12px",
-                  padding: "12px 0",
-                  borderBottom:
-                    index === leaderboard.length - 1
-                      ? "none"
-                      : "1px solid rgba(123, 138, 185, 0.12)",
-                }}
-              >
-                <span>{entry.rank}</span>
+        {leaderboard.length ? (
+          leaderboard.map((entry) => (
+            <div
+              key={`${entry.userId}-${entry.rank}`}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "24px minmax(0, 1fr) auto",
+                gap: "12px",
+                alignItems: "center",
+                padding: "12px 14px",
+                borderRadius: "18px",
+                background: "rgba(10, 14, 9, 0.34)",
+                border: "1px solid rgba(183, 190, 159, 0.12)",
+                boxShadow: "inset 0 1px 0 rgba(210, 223, 147, 0.04)",
+              }}
+            >
+              <span>{entry.rank}</span>
                 <strong
                   style={{
                     minWidth: 0,
@@ -280,19 +236,15 @@ function LeaderboardCard({
                     whiteSpace: "nowrap",
                     fontFamily: '"Rajdhani", sans-serif',
                     letterSpacing: "0.04em",
-                    textTransform: "uppercase",
                   }}
                 >
                   {entry.username}
-                </strong>
-                <span>{entry.score}</span>
-              </div>
-            ))
-          ) : (
-            <p style={{ color: "#b9bfd6" }}>No scores yet.</p>
-          )
+              </strong>
+              <span>{entry.score}</span>
+            </div>
+          ))
         ) : (
-          <p style={{ color: "#b9bfd6" }}>Convex offline.</p>
+          <p style={{ color: "#b9bfd6" }}>No scores yet.</p>
         )}
       </div>
     </div>
@@ -310,16 +262,71 @@ export function ArcadeSidebar({
   height: number;
   showLeaderboard: boolean;
 }) {
+  const { available } = useConvexAvailability();
   const selectedGame = gameRegistry.find((entry) => entry.id === selectedGameId) ?? null;
-  const [renderLeaderboard, setRenderLeaderboard] = useState(showLeaderboard);
-  const [leaderboardVisible, setLeaderboardVisible] = useState(showLeaderboard);
+  const selectedMode = selectedGame?.modes[0]?.id ?? "solo";
+  const selectedLeaderboard = useQuery(
+    anyApi.scores.getGlobalLeaderboard,
+    available && showLeaderboard && selectedGame
+      ? {
+          gameId: selectedGame.id,
+          mode: selectedMode,
+          limit: 5,
+        }
+      : "skip",
+  ) as LeaderboardEntry[] | undefined;
+  const selectedLeaderboardLoaded = Boolean(available && showLeaderboard && selectedGame && selectedLeaderboard);
+  const [displayedGame, setDisplayedGame] = useState<GameManifest | null>(null);
+  const [displayedLeaderboard, setDisplayedLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [renderLeaderboard, setRenderLeaderboard] = useState(false);
+  const [leaderboardVisible, setLeaderboardVisible] = useState(false);
 
   useEffect(() => {
     let fadeTimer = 0;
+    let swapTimer = 0;
     let firstFrame = 0;
     let secondFrame = 0;
 
-    if (showLeaderboard && selectedGame) {
+    if (!available || !showLeaderboard || !selectedGame) {
+      if (!renderLeaderboard) {
+        setDisplayedGame(null);
+        setDisplayedLeaderboard([]);
+        setLeaderboardVisible(false);
+        return () => {
+          window.clearTimeout(fadeTimer);
+          window.clearTimeout(swapTimer);
+          window.cancelAnimationFrame(firstFrame);
+          window.cancelAnimationFrame(secondFrame);
+        };
+      }
+
+      setLeaderboardVisible(false);
+      fadeTimer = window.setTimeout(() => {
+        setRenderLeaderboard(false);
+        setDisplayedGame(null);
+        setDisplayedLeaderboard([]);
+      }, LEADERBOARD_FADE_MS);
+
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        window.cancelAnimationFrame(secondFrame);
+        window.clearTimeout(fadeTimer);
+        window.clearTimeout(swapTimer);
+      };
+    }
+
+    if (!selectedLeaderboardLoaded) {
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        window.cancelAnimationFrame(secondFrame);
+        window.clearTimeout(fadeTimer);
+        window.clearTimeout(swapTimer);
+      };
+    }
+
+    if (!renderLeaderboard || !displayedGame) {
+      setDisplayedGame(selectedGame);
+      setDisplayedLeaderboard(selectedLeaderboard ?? []);
       firstFrame = window.requestAnimationFrame(() => {
         setRenderLeaderboard(true);
         secondFrame = window.requestAnimationFrame(() => {
@@ -331,22 +338,51 @@ export function ArcadeSidebar({
         window.cancelAnimationFrame(firstFrame);
         window.cancelAnimationFrame(secondFrame);
         window.clearTimeout(fadeTimer);
+        window.clearTimeout(swapTimer);
       };
     }
 
-    firstFrame = window.requestAnimationFrame(() => {
+    if (displayedGame.id === selectedGame.id) {
+      setDisplayedLeaderboard(selectedLeaderboard ?? []);
+      firstFrame = window.requestAnimationFrame(() => {
+        setLeaderboardVisible(true);
+      });
+
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        window.cancelAnimationFrame(secondFrame);
+        window.clearTimeout(fadeTimer);
+        window.clearTimeout(swapTimer);
+      };
+    }
+
+    setLeaderboardVisible(false);
+    swapTimer = window.setTimeout(() => {
+      setDisplayedGame(selectedGame);
+      setDisplayedLeaderboard(selectedLeaderboard ?? []);
       setLeaderboardVisible(false);
-      fadeTimer = window.setTimeout(() => {
-        setRenderLeaderboard(false);
-      }, LEADERBOARD_FADE_MS);
-    });
+      firstFrame = window.requestAnimationFrame(() => {
+        secondFrame = window.requestAnimationFrame(() => {
+          setLeaderboardVisible(true);
+        });
+      });
+    }, LEADERBOARD_FADE_MS);
 
     return () => {
       window.cancelAnimationFrame(firstFrame);
       window.cancelAnimationFrame(secondFrame);
       window.clearTimeout(fadeTimer);
+      window.clearTimeout(swapTimer);
     };
-  }, [selectedGame, showLeaderboard]);
+  }, [
+    available,
+    displayedGame,
+    renderLeaderboard,
+    selectedGame,
+    selectedLeaderboard,
+    selectedLeaderboardLoaded,
+    showLeaderboard,
+  ]);
 
   return (
     <aside
@@ -354,7 +390,7 @@ export function ArcadeSidebar({
         width: "360px",
         maxWidth: "360px",
         height: `${Math.round(height)}px`,
-        background: "#000000",
+        background: "transparent",
         display: "flex",
         flexDirection: "column",
         gap: "16px",
@@ -363,17 +399,22 @@ export function ArcadeSidebar({
     >
       <SessionCard
         sessionUser={sessionUser}
+        game={selectedGame}
+        showBest={showLeaderboard && Boolean(selectedGame)}
       />
-      {renderLeaderboard && selectedGame ? (
+      {renderLeaderboard && displayedGame ? (
         <div
           style={{
             flex: 1,
             minHeight: 0,
             opacity: leaderboardVisible ? 1 : 0,
-            transition: `opacity ${LEADERBOARD_FADE_MS}ms ease`,
+            transform: leaderboardVisible ? "translateY(0)" : "translateY(10px)",
+            filter: leaderboardVisible ? "blur(0px)" : "blur(4px)",
+            transition: `opacity ${LEADERBOARD_FADE_MS}ms ease, transform ${LEADERBOARD_FADE_MS}ms ease, filter ${LEADERBOARD_FADE_MS}ms ease`,
+            willChange: "opacity, transform, filter",
           }}
         >
-          <LeaderboardCard game={selectedGame} sessionUser={sessionUser} />
+          <LeaderboardCard game={displayedGame} leaderboard={displayedLeaderboard} />
         </div>
       ) : null}
     </aside>

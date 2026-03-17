@@ -11,6 +11,7 @@
   --danger: #ff6b7d;
   --shadow: 0 24px 100px rgba(0, 0, 0, 0.4);
   --grid: rgba(116, 247, 178, 0.08);
+  --gameboy-screen-bg: #141b0f;
   --font-display: "Rajdhani", sans-serif;
   --font-body: "IBM Plex Sans", sans-serif;
   --game-rail-width: 216px;
@@ -85,6 +86,148 @@ ul {
   width: min(1180px, calc(100vw - 40px));
   margin: 0 auto;
   padding: 24px 0 80px;
+}
+
+.desktop-only-app {
+  min-height: 100%;
+}
+
+.desktop-only-splash {
+  display: none;
+}
+
+.desktop-only-splash__panel {
+  width: min(100%, 360px);
+  padding: 28px 24px 26px;
+  border: 1px solid rgba(183, 190, 159, 0.16);
+  border-radius: 32px;
+  background: rgba(10, 14, 9, 0.72);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    inset 0 1px 0 rgba(210, 223, 147, 0.04),
+    0 24px 80px rgba(0, 0, 0, 0.28);
+  text-align: center;
+}
+
+.desktop-only-splash__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  margin-bottom: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(183, 190, 159, 0.16);
+  background: rgba(47, 71, 34, 0.28);
+  color: rgba(216, 221, 236, 0.82);
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.desktop-only-splash__title {
+  color: #d2df93;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 11vw, 3.3rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.desktop-only-splash__copy {
+  margin-top: 12px;
+  color: #b9bfd6;
+  font-size: 0.98rem;
+  line-height: 1.65;
+}
+
+.desktop-only-splash__device {
+  width: 164px;
+  margin: 26px auto 0;
+}
+
+.desktop-only-splash__screen {
+  position: relative;
+  width: 164px;
+  height: 104px;
+  padding: 16px;
+  border-radius: 18px 18px 12px 12px;
+  border: 1px solid rgba(183, 190, 159, 0.18);
+  background:
+    linear-gradient(180deg, rgba(24, 34, 18, 0.96) 0%, rgba(14, 21, 11, 0.98) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(210, 223, 147, 0.05),
+    inset 0 14px 28px rgba(210, 223, 147, 0.05);
+}
+
+.desktop-only-splash__screen::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, transparent 0 49%, rgba(210, 223, 147, 0.07) 49% 51%, transparent 51%),
+    linear-gradient(0deg, transparent 0 49%, rgba(210, 223, 147, 0.07) 49% 51%, transparent 51%),
+    radial-gradient(circle at 50% 50%, rgba(210, 223, 147, 0.12), transparent 68%);
+  background-size: 14px 14px, 14px 14px, auto;
+}
+
+.desktop-only-splash__pixel {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: rgba(210, 223, 147, 0.74);
+  box-shadow: 0 0 18px rgba(210, 223, 147, 0.26);
+}
+
+.desktop-only-splash__pixel:nth-child(1) {
+  left: 34px;
+  top: 32px;
+}
+
+.desktop-only-splash__pixel:nth-child(2) {
+  left: 76px;
+  top: 52px;
+}
+
+.desktop-only-splash__pixel:nth-child(3) {
+  right: 32px;
+  top: 26px;
+}
+
+.desktop-only-splash__base {
+  width: 92px;
+  height: 14px;
+  margin: 8px auto 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(183, 190, 159, 0.16) 0%, rgba(47, 71, 34, 0.34) 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+@media (hover: none) and (pointer: coarse) and (max-width: 760px), (hover: none) and (pointer: coarse) and (max-height: 520px) {
+  html,
+  body {
+    background: #000 !important;
+    background-image: none !important;
+  }
+
+  .desktop-only-app {
+    display: none;
+  }
+
+  .desktop-only-splash {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background:
+      radial-gradient(circle at 50% 18%, rgba(210, 223, 147, 0.08), transparent 36%),
+      linear-gradient(180deg, #090b08 0%, #000 100%);
+  }
 }
 
 .site-shell-game {

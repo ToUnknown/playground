@@ -37,6 +37,7 @@ export function ArcadeStage({
   controlPulse,
   pressedButtons,
   onControlButtonChange,
+  onModelHoverChange,
   onSelectGame,
   onAudioCue,
   onMusicTrackChange,
@@ -49,6 +50,7 @@ export function ArcadeStage({
   controlPulse: GameboyControlPulse | null;
   pressedButtons: GameboyPressedButtons;
   onControlButtonChange: (button: GameboyControlButton, pressed: boolean, sourceId: string) => void;
+  onModelHoverChange?: (hovering: boolean) => void;
   onSelectGame: (gameId: string) => void;
   onAudioCue?: (cue: GameboyAudioCue) => void;
   onMusicTrackChange?: (track: GameboyMusicTrack | null) => void;
@@ -241,6 +243,7 @@ export function ArcadeStage({
           poweredOn={screenVisible}
           pressedButtons={pressedButtons}
           onControlButtonChange={onControlButtonChange}
+          onModelHoverChange={onModelHoverChange}
         />
       </div>
     </section>

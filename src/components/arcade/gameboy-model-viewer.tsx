@@ -153,7 +153,7 @@ const MODEL_REVEAL_OVERSHOOT_SCALE = 1.045;
 const MODEL_REVEAL_DELAY_MS = 70;
 const MODEL_REVEAL_DURATION_MS = 860;
 const MODEL_REVEAL_ENTRY_PORTION = 0.82;
-const MODEL_INTERACTION_DELAY_MS = 2000;
+const MODEL_INTERACTION_DELAY_MS = 1000;
 const MODEL_INTERACTION_FADE_MS = 260;
 
 type InteractiveModelParts = {
@@ -709,6 +709,7 @@ function ModelRig({
   screenSurfaceTextures,
   pointerInteraction,
   onControlHoverChange,
+  onModelHoverChange,
   onRevealStart,
 }: {
   modelUrl: string;
@@ -722,6 +723,7 @@ function ModelRig({
   screenSurfaceTextures: ReturnType<typeof createScreenSurfaceTextures>;
   pointerInteraction: RefObject<Map<number, PointerInteractionType>>;
   onControlHoverChange?: (hovering: boolean) => void;
+  onModelHoverChange?: (hovering: boolean) => void;
   onRevealStart?: () => void;
 }) {
   const { scene } = useGLTF(modelUrl) as GameboyGLTF;
@@ -734,11 +736,16 @@ function ModelRig({
   const pointerSourceRef = useRef(new Map<number, string>());
   const pointerVisualUntilRef = useRef(createButtonTimeRecord());
   const onControlButtonChangeRef = useRef(onControlButtonChange);
+  const onModelHoverChangeRef = useRef(onModelHoverChange);
   const onRevealStartRef = useRef(onRevealStart);
 
   useEffect(() => {
     onControlButtonChangeRef.current = onControlButtonChange;
   }, [onControlButtonChange]);
+
+  useEffect(() => {
+    onModelHoverChangeRef.current = onModelHoverChange;
+  }, [onModelHoverChange]);
 
   useEffect(() => {
     onRevealStartRef.current = onRevealStart;
@@ -784,8 +791,17 @@ function ModelRig({
   useEffect(() => {
     return () => {
       onControlHoverChange?.(false);
+      onModelHoverChangeRef.current?.(false);
     };
   }, [onControlHoverChange]);
+
+  const handleModelPointerEnter = () => {
+    onModelHoverChangeRef.current?.(true);
+  };
+
+  const handleModelPointerLeave = () => {
+    onModelHoverChangeRef.current?.(false);
+  };
 
   const emitControlButtonChange = (button: GameboyControlButton, pressed: boolean, sourceId: string) => {
     onControlButtonChangeRef.current?.(button, pressed, sourceId);
@@ -1148,6 +1164,8 @@ function ModelRig({
             <group
               rotation={config.modelTransform.rotation}
               scale={config.modelTransform.scale}
+              onPointerEnter={handleModelPointerEnter}
+              onPointerLeave={handleModelPointerLeave}
             >
               <primitive object={modelParts.body} />
               {modelParts.buttons.a ? (
@@ -1246,6 +1264,7 @@ export function GameboyModelViewer({
   poweredOn = true,
   pressedButtons = {},
   onControlButtonChange,
+  onModelHoverChange,
   viewerConfig,
 }: {
   modelUrl: string;
@@ -1257,6 +1276,7 @@ export function GameboyModelViewer({
   poweredOn?: boolean;
   pressedButtons?: GameboyPressedButtons;
   onControlButtonChange?: (button: GameboyControlButton, pressed: boolean, sourceId: string) => void;
+  onModelHoverChange?: (hovering: boolean) => void;
   viewerConfig?: Partial<Omit<GameboyViewerConfig, "modelUrl" | "fullScreen" | "height" | "screen">>;
 }) {
   const [dragging, setDragging] = useState(false);
@@ -1410,6 +1430,7 @@ export function GameboyModelViewer({
           pointerInteractionRef.current.clear();
           setDragging(false);
           setHoveringControl(false);
+          onModelHoverChange?.(false);
           dragStartRef.current = null;
           dragRotationRef.current.set(0, 0);
           pointerRotationRef.current.set(0, 0);
@@ -1443,6 +1464,7 @@ export function GameboyModelViewer({
             screenSurfaceTextures={screenSurfaceTextures}
             pointerInteraction={pointerInteractionRef}
             onControlHoverChange={setHoveringControl}
+            onModelHoverChange={onModelHoverChange}
             onRevealStart={() => setRevealVisible(true)}
           />
           <Environment preset="warehouse" />

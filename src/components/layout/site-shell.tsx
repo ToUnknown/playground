@@ -17,8 +17,7 @@ export function SiteShell({
     <div className={cn("site-shell", gameLayout && "site-shell-game")}>
       <header className={cn("site-header", gameLayout && "site-header-game")}>
         <Link href="/" className="brand">
-          Friends
-          <span>Arcade</span>
+          Playdround
         </Link>
         <nav className="site-nav">
           <Link href="/">Games</Link>
