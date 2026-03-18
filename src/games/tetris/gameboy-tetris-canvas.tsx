@@ -24,7 +24,7 @@ import {
   GAMEBOY_SCREEN_HEIGHT,
   GAMEBOY_SCREEN_WIDTH,
 } from "@/lib/gameboy-screen";
-import type { GameboyAudioCue } from "@/lib/gameboy-audio";
+import type { GameboyAudioCue, GameboyMusicTrack } from "@/lib/gameboy-audio";
 
 export type ExternalGameboyPulse = {
   button: "up" | "down" | "left" | "right" | "a" | "b" | "start" | "select";
@@ -260,7 +260,9 @@ const PIECE_PREVIEWS: Record<TetrisPieceType, TetrisPieceState> = {
 
 function drawTitleScene(context: CanvasRenderingContext2D, assets: GameboyTetrisAssets) {
   context.drawImage(assets.titleScreen, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-  drawTextPrompt(context, "PRESS START", 26, 246);
+  context.fillStyle = FALLBACK_BG;
+  context.fillRect(0, 228, CANVAS_WIDTH, CANVAS_HEIGHT - 228);
+  drawTextPrompt(context, "PRESS START", CANVAS_WIDTH / 2, 252, "center");
 }
 
 function mapArcadePulseToInput(button: ExternalGameboyPulse["button"]) {
@@ -445,6 +447,7 @@ function TetrisGameCanvas({
   onExit,
   onReplayReady,
   onAudioCue,
+  onMusicTrackChange,
   ignoredPulseSeq,
 }: {
   sessionUser: SessionUser | null;
@@ -452,6 +455,7 @@ function TetrisGameCanvas({
   onExit?: () => void;
   onReplayReady?: (restart: () => void, score: number, result: SoloGameResult | null) => void;
   onAudioCue?: (cue: GameboyAudioCue) => void;
+  onMusicTrackChange?: (track: GameboyMusicTrack | null) => void;
   ignoredPulseSeq?: number | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -469,6 +473,7 @@ function TetrisGameCanvas({
     accumulatorMs: 0,
   });
   const audioCueRef = useRef(onAudioCue);
+  const activeMusicTrackRef = useRef<GameboyMusicTrack | null>(null);
   const dispatchInputRef = useRef<(input: TetrisInput) => void>(() => undefined);
   const onSnapshotRef = useRef<(snapshot: TetrisSnapshot, result: SoloGameResult | null) => void>(
     () => undefined,
@@ -482,7 +487,23 @@ function TetrisGameCanvas({
     audioCueRef.current?.(cue);
   };
 
-  const dispatchInput = (input: TetrisInput) => {
+  const syncMusicTrack = useEffectEvent((status: TetrisSnapshot["status"]) => {
+    const nextTrack =
+      status === "title"
+        ? "tetrisTitle"
+        : status === "playing" || status === "paused"
+          ? "tetris"
+          : null;
+
+    if (activeMusicTrackRef.current === nextTrack) {
+      return;
+    }
+
+    activeMusicTrackRef.current = nextTrack;
+    onMusicTrackChange?.(nextTrack);
+  });
+
+  const dispatchInput = useEffectEvent((input: TetrisInput) => {
     const previousStatus = engineRef.current.getStatus();
     engineRef.current.handleInput(input);
     const nextStatus = engineRef.current.getStatus();
@@ -509,7 +530,7 @@ function TetrisGameCanvas({
     ) {
       playAudioCue("menuConfirm");
     }
-  };
+  });
 
   useScoreSave({
     manifestId: "tetris",
@@ -555,9 +576,11 @@ function TetrisGameCanvas({
     onSnapshotRef.current = (snapshot: TetrisSnapshot, nextResult: SoloGameResult | null) => {
       const previousSnapshot = previousSnapshotRef.current;
 
+      syncMusicTrack(snapshot.status);
+
       if (previousSnapshot) {
         if (previousSnapshot.status !== "gameOver" && snapshot.status === "gameOver") {
-          playAudioCue("gameOver");
+          playAudioCue("tetrisGameOver");
         } else if (snapshot.lines > previousSnapshot.lines) {
           playAudioCue("tetrisLineClear");
         } else if (snapshot.piecesPlaced > previousSnapshot.piecesPlaced) {
@@ -579,6 +602,15 @@ function TetrisGameCanvas({
       });
     };
   });
+
+  useEffect(() => {
+    syncMusicTrack(engineRef.current.getStatus());
+
+    return () => {
+      activeMusicTrackRef.current = null;
+      onMusicTrackChange?.(null);
+    };
+  }, [onMusicTrackChange]);
 
   useTetrisArcadeLoop({
     canvasRef,
@@ -702,12 +734,14 @@ export function ArcadeGameboyTetris({
   sessionUser,
   onExit,
   onAudioCue,
+  onMusicTrackChange,
   ignoredPulseSeq,
 }: {
   controlPulse: ExternalGameboyPulse | null;
   sessionUser: SessionUser | null;
   onExit: () => void;
   onAudioCue?: (cue: GameboyAudioCue) => void;
+  onMusicTrackChange?: (track: GameboyMusicTrack | null) => void;
   ignoredPulseSeq?: number | null;
 }) {
   return (
@@ -716,6 +750,7 @@ export function ArcadeGameboyTetris({
       sessionUser={sessionUser}
       onExit={onExit}
       onAudioCue={onAudioCue}
+      onMusicTrackChange={onMusicTrackChange}
       ignoredPulseSeq={ignoredPulseSeq}
     />
   );

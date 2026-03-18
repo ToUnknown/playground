@@ -13,6 +13,10 @@ export const scoreSubmissionSchema = z.object({
   stats: z.record(z.string(), z.unknown()),
 });
 
+export const blackjackBankSchema = z.object({
+  bank: z.number().int().nonnegative().max(9_999_999),
+});
+
 export const matchPersistSchema = z.object({
   gameId: z.string().min(1),
   roomCode: z.string().min(1),

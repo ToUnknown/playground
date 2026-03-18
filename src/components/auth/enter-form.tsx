@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+
+const PAGE_FADE_MS = 700;
 
 type FlowState = {
   username: string;
@@ -10,7 +12,7 @@ type FlowState = {
   confirmCreate: boolean;
 };
 
-export function EnterForm() {
+export function EnterForm({ footer }: { footer?: ReactNode }) {
   const [state, setState] = useState<FlowState>({
     username: "",
     password: "",
@@ -24,8 +26,34 @@ export function EnterForm() {
   const [confirmButtonHovered, setConfirmButtonHovered] = useState<"cancel" | "create" | null>(null);
   const [loginCardHovered, setLoginCardHovered] = useState(false);
   const [confirmCardHovered, setConfirmCardHovered] = useState(false);
+  const [pageVisible, setPageVisible] = useState(false);
+  const [pageExiting, setPageExiting] = useState(false);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setPageVisible(true);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  async function leavePage(nextLocation: string) {
+    setPageExiting(true);
+
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, PAGE_FADE_MS);
+    });
+
+    window.location.assign(nextLocation);
+  }
 
   async function submit(mode: "enter" | "confirm") {
+    if (state.pending || pageExiting) {
+      return;
+    }
+
     setState((current) => ({ ...current, pending: true, error: null }));
 
     const endpoint =
@@ -61,7 +89,7 @@ export function EnterForm() {
       return;
     }
 
-    window.location.assign("/");
+    await leavePage("/");
   }
 
   return (
@@ -414,6 +442,37 @@ export function EnterForm() {
           </div>
         </div>
       ) : null}
+      {footer ? (
+        <div
+          style={{
+            position: "fixed",
+            right: "24px",
+            bottom: "24px",
+            zIndex: 2,
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            opacity: pageVisible && !pageExiting ? 1 : 0,
+            transform: pageVisible && !pageExiting ? "translateY(0)" : "translateY(8px)",
+            transition: `opacity ${PAGE_FADE_MS}ms ease, transform ${PAGE_FADE_MS}ms ease`,
+            pointerEvents: pageExiting ? "none" : "auto",
+          }}
+        >
+          {footer}
+        </div>
+      ) : null}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 40,
+          background: "#000000",
+          opacity: pageVisible && !pageExiting ? 0 : 1,
+          transition: `opacity ${PAGE_FADE_MS}ms ease`,
+          pointerEvents: pageExiting ? "auto" : "none",
+        }}
+      />
     </>
   );
 }

@@ -11,7 +11,6 @@ import {
   loadGameboyTetrisAssets,
   type GameboyTetrisAssets,
 } from "@/games/tetris/gameboy-tetris-assets";
-import type { TetrisPieceType } from "@/games/tetris/gameboy-tetris-engine";
 import {
   GAMEBOY_TETRIS_DARK,
   GAMEBOY_TETRIS_LIGHT,
@@ -50,13 +49,23 @@ const HUD_TOP = 14;
 const HUD_WIDTH = SCREEN_WIDTH - HUD_LEFT * 2;
 const HUD_HEIGHT = 42;
 const WALL_WIDTH = 12;
-const WALL_LEFT = BOARD_LEFT - WALL_WIDTH - 4;
-const WALL_RIGHT = BOARD_LEFT + BOARD_SIZE + 4;
+const WALL_LEFT = BOARD_LEFT - WALL_WIDTH;
+const WALL_RIGHT = BOARD_LEFT + BOARD_SIZE;
+const WALL_TOP = BOARD_TOP - WALL_WIDTH;
+const WALL_BOTTOM = BOARD_BOTTOM;
+const WALL_OUTER_WIDTH = WALL_RIGHT + WALL_WIDTH - WALL_LEFT;
 const FONT_FAMILY = '"Gameboy Tetris", "IBM Plex Sans", monospace';
 const HUD_VALUE_FONT_SIZE = 14;
 const FALLBACK_BG = GAMEBOY_TETRIS_LIGHT;
 const FALLBACK_DARK = GAMEBOY_TETRIS_DARK;
 const FALLBACK_DEEP = GAMEBOY_TETRIS_DARK;
+const GRID_LINE = "rgba(64, 66, 67, 0.14)";
+const SNAKE_FILL = "#5f6955";
+const SNAKE_SHADOW = "#353736";
+const SNAKE_HIGHLIGHT = "#aab68a";
+const SNAKE_CORE = "#495043";
+const APPLE_FILL = "#6c7557";
+const APPLE_HIGHLIGHT = "#cfd8a8";
 const INITIAL_SNAKE: SnakePoint[] = [
   { x: 8, y: 8 },
   { x: 7, y: 8 },
@@ -72,10 +81,6 @@ const SNAKE_DIRECTIONS: Record<
   left: { x: -1, y: 0 },
   right: { x: 1, y: 0 },
 };
-
-const BODY_PIECES: TetrisPieceType[] = ["i", "j", "l", "s", "z"];
-const HEAD_PIECE: TetrisPieceType = "t";
-const FOOD_PIECE: TetrisPieceType = "o";
 
 function createInitialSnake() {
   return INITIAL_SNAKE.map((segment) => ({ ...segment }));
@@ -163,6 +168,29 @@ function drawWallColumn(
   }
 }
 
+function drawWallRow(
+  context: CanvasRenderingContext2D,
+  assets: GameboyTetrisAssets | null,
+  x: number,
+  y: number,
+  width: number,
+) {
+  context.fillStyle = FALLBACK_DARK;
+  context.fillRect(x, y, width, WALL_WIDTH);
+
+  if (!assets) {
+    return;
+  }
+
+  for (let offset = -2; offset < width + 4; offset += 10) {
+    const tileWidth = Math.min(10, width - offset);
+    if (tileWidth <= 0) {
+      continue;
+    }
+    context.drawImage(assets.wall, x + offset, y + 2, tileWidth, 8);
+  }
+}
+
 function drawPanel(
   context: CanvasRenderingContext2D,
   label: string,
@@ -189,25 +217,96 @@ function drawPanel(
 
 function drawPieceTile(
   context: CanvasRenderingContext2D,
-  assets: GameboyTetrisAssets | null,
-  pieceType: TetrisPieceType,
   x: number,
   y: number,
   size: number,
 ) {
-  context.fillStyle = FALLBACK_BG;
-  context.fillRect(x, y, size, size);
-  context.strokeStyle = FALLBACK_DARK;
-  context.lineWidth = 1;
-  context.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+  context.fillStyle = SNAKE_SHADOW;
+  context.fillRect(x + 1, y + 1, size - 2, size - 2);
 
-  if (assets) {
-    context.drawImage(assets.pieces[pieceType], x + 1, y + 1, size - 2, size - 2);
-    return;
-  }
+  context.fillStyle = SNAKE_FILL;
+  context.fillRect(x + 2, y + 2, size - 4, size - 4);
+
+  context.fillStyle = SNAKE_HIGHLIGHT;
+  context.fillRect(x + 3, y + 2, size - 6, 1);
+  context.fillRect(x + 2, y + 3, 1, size - 6);
+
+  context.fillStyle = SNAKE_CORE;
+  context.fillRect(x + 4, y + 3, size - 8, size - 6);
+
+  context.fillStyle = SNAKE_HIGHLIGHT;
+  context.fillRect(x + 5, y + 4, size - 10, 1);
+
+  context.fillStyle = FALLBACK_BG;
+  context.fillRect(x + 1, y + 1, 1, 1);
+  context.fillRect(x + size - 2, y + 1, 1, 1);
+  context.fillRect(x + 1, y + size - 2, 1, 1);
+  context.fillRect(x + size - 2, y + size - 2, 1, 1);
+}
+
+function drawSnakeHead(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  direction: SnakeDirection,
+) {
+  drawPieceTile(context, x, y, size);
+
+  const eyes =
+    direction.x > 0
+      ? [
+          { x: x + size - 4, y: y + 3 },
+          { x: x + size - 4, y: y + size - 5 },
+        ]
+      : direction.x < 0
+        ? [
+            { x: x + 2, y: y + 3 },
+            { x: x + 2, y: y + size - 5 },
+          ]
+        : direction.y < 0
+          ? [
+              { x: x + 3, y: y + 2 },
+              { x: x + size - 5, y: y + 2 },
+            ]
+          : [
+              { x: x + 3, y: y + size - 4 },
+              { x: x + size - 5, y: y + size - 4 },
+            ];
+
+  context.fillStyle = FALLBACK_BG;
+  eyes.forEach((eye) => {
+    context.fillRect(eye.x, eye.y, 2, 2);
+  });
+}
+
+function drawApple(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+) {
+  const centerX = x + size / 2;
+  const centerY = y + size / 2 + 0.5;
+  const radius = size / 2 - 2.5;
+
+  context.fillStyle = APPLE_FILL;
+  context.beginPath();
+  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  context.fill();
+
+  context.strokeStyle = FALLBACK_DARK;
+  context.lineWidth = 1.5;
+  context.stroke();
+
+  context.fillStyle = APPLE_HIGHLIGHT;
+  context.beginPath();
+  context.arc(centerX - 2, centerY - 2, 1.5, 0, Math.PI * 2);
+  context.fill();
 
   context.fillStyle = FALLBACK_DARK;
-  context.fillRect(x + 2, y + 2, size - 4, size - 4);
+  context.fillRect(Math.round(centerX) - 1, y + 1, 2, 3);
+  context.fillRect(Math.round(centerX) + 1, y + 1, 2, 1);
 }
 
 function drawOverlay(
@@ -231,6 +330,21 @@ function drawOverlay(
   context.textAlign = "left";
 }
 
+function drawSnakeSplash(context: CanvasRenderingContext2D) {
+  context.fillStyle = FALLBACK_DARK;
+  context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+  context.textAlign = "center";
+  context.fillStyle = FALLBACK_BG;
+  context.font = `42px ${FONT_FAMILY}`;
+  context.textBaseline = "middle";
+  context.fillText("SNAKE", SCREEN_WIDTH / 2, 142);
+  context.font = `12px ${FONT_FAMILY}`;
+  context.fillText("START", SCREEN_WIDTH / 2, 212);
+  context.textBaseline = "alphabetic";
+  context.textAlign = "left";
+}
+
 function drawSnakeScene(args: {
   context: CanvasRenderingContext2D;
   assets: GameboyTetrisAssets | null;
@@ -240,11 +354,27 @@ function drawSnakeScene(args: {
   status: SnakeGameStatus;
   result: SoloGameResult | null;
   runtimeMs: number;
+  direction: SnakeDirection;
 }) {
-  const { context, assets, snake, food, score, status, result, runtimeMs } = args;
+  const {
+    context,
+    assets,
+    snake,
+    food,
+    score,
+    status,
+    result,
+    runtimeMs,
+    direction,
+  } = args;
   const boardRight = BOARD_LEFT + BOARD_SIZE;
   const sizeValue = formatValue(snake.length);
   const scoreValue = String(score).padStart(3, "0");
+
+  if (status === "ready") {
+    drawSnakeSplash(context);
+    return;
+  }
 
   context.fillStyle = FALLBACK_DEEP;
   context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -264,8 +394,10 @@ function drawSnakeScene(args: {
     HUD_WIDTH - 150,
   );
 
+  drawWallRow(context, assets, WALL_LEFT, WALL_TOP, WALL_OUTER_WIDTH);
   drawWallColumn(context, assets, WALL_LEFT, BOARD_TOP, BOARD_SIZE);
   drawWallColumn(context, assets, WALL_RIGHT, BOARD_TOP, BOARD_SIZE);
+  drawWallRow(context, assets, WALL_LEFT, WALL_BOTTOM, WALL_OUTER_WIDTH);
 
   context.fillStyle = FALLBACK_BG;
   context.fillRect(BOARD_LEFT, BOARD_TOP, BOARD_SIZE, BOARD_SIZE);
@@ -273,7 +405,7 @@ function drawSnakeScene(args: {
   context.lineWidth = 2;
   context.strokeRect(BOARD_LEFT - 0.5, BOARD_TOP - 0.5, BOARD_SIZE + 1, BOARD_SIZE + 1);
 
-  context.strokeStyle = "rgba(64, 66, 67, 0.18)";
+  context.strokeStyle = GRID_LINE;
   context.lineWidth = 1;
   for (let index = 1; index < GRID_SIZE; index += 1) {
     const x = BOARD_LEFT + index * CELL_SIZE + 0.5;
@@ -293,14 +425,18 @@ function drawSnakeScene(args: {
   if (food) {
     const x = BOARD_LEFT + food.x * CELL_SIZE;
     const y = BOARD_TOP + food.y * CELL_SIZE;
-    drawPieceTile(context, assets, FOOD_PIECE, x, y, CELL_SIZE);
+    drawApple(context, x, y, CELL_SIZE);
   }
 
   snake.forEach((segment, index) => {
-    const pieceType = index === 0 ? HEAD_PIECE : BODY_PIECES[(index - 1) % BODY_PIECES.length]!;
     const x = BOARD_LEFT + segment.x * CELL_SIZE;
     const y = BOARD_TOP + segment.y * CELL_SIZE;
-    drawPieceTile(context, assets, pieceType, x, y, CELL_SIZE);
+    if (index === 0) {
+      drawSnakeHead(context, x, y, CELL_SIZE, direction);
+      return;
+    }
+
+    drawPieceTile(context, x, y, CELL_SIZE);
   });
 
   context.fillStyle = FALLBACK_DARK;
@@ -313,8 +449,6 @@ function drawSnakeScene(args: {
     drawOverlay(context, "GAME OVER", "START TO RESTART");
   } else if (status === "paused") {
     drawOverlay(context, "PAUSED", "START TO RESUME");
-  } else if (status === "ready") {
-    drawOverlay(context, "SNAKE", "PRESS START");
   }
 }
 
@@ -544,6 +678,7 @@ export function GameboySnake({
         status: statusRef.current,
         result: resultRef.current,
         runtimeMs,
+        direction: directionRef.current,
       });
     };
 

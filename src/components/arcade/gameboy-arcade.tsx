@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import type {
   GameboyControlButton,
@@ -8,64 +8,142 @@ import type {
   GameboyPressedButtons,
 } from "@/components/arcade/gameboy-games";
 import { GameboyCursorField } from "@/components/backgrounds/gameboy-cursor-field";
+import { loadGameboyTetrisAssets } from "@/games/tetris/gameboy-tetris-assets";
 import type { GameboyMusicTrack } from "@/lib/gameboy-audio";
 import type { SessionUser } from "@/lib/contracts";
 import { gameRegistry } from "@/lib/game-registry";
-import { ArcadeSidebar } from "@/components/arcade/arcade-sidebar";
-import { ARCADE_BOOT_DURATION_MS, ArcadeStage } from "@/components/arcade/arcade-stage";
+import { ArcadeStage } from "@/components/arcade/arcade-stage";
 import { useGameboyAudio } from "@/lib/gameboy-audio";
 
 const pageShellStyle: CSSProperties = {
   width: "100%",
-  minHeight: "100vh",
-  padding: "36px 24px",
+  minHeight: "100dvh",
+  padding: 0,
   boxSizing: "border-box",
   background: "#000000",
 };
 
-const floatingControlsStyle: CSSProperties = {
+const backgroundTintStyle: CSSProperties = {
   position: "fixed",
-  left: "24px",
-  bottom: "24px",
-  zIndex: 20,
-  display: "flex",
-  gap: "12px",
-  alignItems: "center",
+  inset: 0,
+  background: "var(--gameboy-screen-bg)",
+  pointerEvents: "none",
 };
 
-const floatingControlButtonStyle: CSSProperties = {
-  width: "48px",
-  height: "48px",
-  padding: 0,
-  border: "1px solid rgba(183, 190, 159, 0.16)",
+const powerTipStyle: CSSProperties = {
+  position: "fixed",
+  top: "18px",
+  left: "50%",
+  transform: "translateX(-50%)",
+  zIndex: 20,
   borderRadius: "999px",
-  background: "#000000",
-  color: "#f4f2ed",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  cursor: "pointer",
-  appearance: "none",
+  background: "rgba(10, 14, 9, 0.72)",
+  color: "#ffffff",
+  padding: "8px 14px",
+  fontFamily: '"Rajdhani", sans-serif',
+  letterSpacing: "0.14em",
+  textTransform: "uppercase",
+  fontSize: "0.8rem",
 };
+
+const DEFAULT_SOUND_LEVEL = 5;
+const DEFAULT_MUSIC_LEVEL = 5;
+const SOUND_LEVEL_STORAGE_KEY = "playdround:gameboy-sound-level";
+const MUSIC_LEVEL_STORAGE_KEY = "playdround:gameboy-music-level";
+const BACKGROUND_FADE_MS = 420;
+const LOGOUT_POWER_OFF_MS = 320;
+const LOGOUT_FADE_MS = 700;
+
+function clampLevel(level: number) {
+  return Math.max(0, Math.min(10, Math.round(level)));
+}
 
 export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null }) {
   const [selectedGameId, setSelectedGameId] = useState(gameRegistry[0]?.id ?? "snake");
+  const [gameboyZoomed, setGameboyZoomed] = useState(false);
   const [poweredOn, setPoweredOn] = useState(false);
-  const [soundOn, setSoundOn] = useState(true);
-  const [musicOn, setMusicOn] = useState(true);
-  const [leaderboardReady, setLeaderboardReady] = useState(false);
+  const [soundLevel, setSoundLevel] = useState(DEFAULT_SOUND_LEVEL);
+  const [musicLevel, setMusicLevel] = useState(DEFAULT_MUSIC_LEVEL);
+  const [showPowerTip, setShowPowerTip] = useState(false);
+  const [powerTipVisible, setPowerTipVisible] = useState(false);
   const [controlPulse, setControlPulse] = useState<GameboyControlPulse | null>(null);
   const [pressedButtons, setPressedButtons] = useState<GameboyPressedButtons>({});
   const [musicTrack, setMusicTrack] = useState<GameboyMusicTrack | null>(null);
   const [hoveringModel, setHoveringModel] = useState(false);
   const [viewport, setViewport] = useState({ width: 1440, height: 900 });
+  const [logoutPhase, setLogoutPhase] = useState<"idle" | "poweringOff" | "fading">("idle");
+  const [backgroundVisible, setBackgroundVisible] = useState(false);
   const controlSourcesRef = useRef<Map<GameboyControlButton, Set<string>>>(new Map());
   const { playCue, unlockAudio } = useGameboyAudio({
-    soundEnabled: soundOn,
-    musicEnabled: musicOn,
+    soundEnabled: soundLevel > 0,
+    musicEnabled: musicLevel > 0,
+    soundVolume: soundLevel / 10,
+    musicVolume: musicLevel / 10,
     poweredOn,
     musicTrack,
   });
+
+  useEffect(() => {
+    void loadGameboyTetrisAssets().catch(() => undefined);
+  }, []);
+
+  const resetControlState = useCallback(() => {
+    controlSourcesRef.current.clear();
+    setPressedButtons({});
+    setControlPulse(null);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let cancelled = false;
+    const storedSoundLevel = window.localStorage.getItem(SOUND_LEVEL_STORAGE_KEY);
+    const storedMusicLevel = window.localStorage.getItem(MUSIC_LEVEL_STORAGE_KEY);
+
+    if (storedSoundLevel !== null) {
+      const parsedSoundLevel = Number(storedSoundLevel);
+      if (Number.isFinite(parsedSoundLevel)) {
+        queueMicrotask(() => {
+          if (!cancelled) {
+            setSoundLevel(clampLevel(parsedSoundLevel));
+          }
+        });
+      }
+    }
+
+    if (storedMusicLevel !== null) {
+      const parsedMusicLevel = Number(storedMusicLevel);
+      if (Number.isFinite(parsedMusicLevel)) {
+        queueMicrotask(() => {
+          if (!cancelled) {
+            setMusicLevel(clampLevel(parsedMusicLevel));
+          }
+        });
+      }
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(SOUND_LEVEL_STORAGE_KEY, String(clampLevel(soundLevel)));
+  }, [soundLevel]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(MUSIC_LEVEL_STORAGE_KEY, String(clampLevel(musicLevel)));
+  }, [musicLevel]);
 
   const applyControlState = (button: GameboyControlButton, pressed: boolean, sourceId: string) => {
     const activeSources = controlSourcesRef.current.get(button) ?? new Set<string>();
@@ -148,13 +226,46 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
       A: "a",
       b: "b",
       B: "b",
-      z: "a",
-      Z: "a",
       x: "b",
       X: "b",
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (logoutPhase !== "idle") {
+        event.preventDefault();
+        return;
+      }
+
+      if ((event.key === "p" || event.key === "P") && !poweredOn) {
+        if (event.repeat) {
+          event.preventDefault();
+          return;
+        }
+
+        event.preventDefault();
+        unlockAudio();
+        resetControlState();
+        setPoweredOn(true);
+        setShowPowerTip(false);
+        playCue("powerOn");
+        return;
+      }
+
+      if ((event.key === "z" || event.key === "Z") && poweredOn) {
+        if (event.repeat) {
+          event.preventDefault();
+          return;
+        }
+
+        event.preventDefault();
+        setGameboyZoomed((current) => !current);
+        return;
+      }
+
+      if (!poweredOn) {
+        return;
+      }
+
       const button = keyMap[event.key];
       if (!button) {
         return;
@@ -170,6 +281,15 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
+      if (logoutPhase !== "idle") {
+        event.preventDefault();
+        return;
+      }
+
+      if (!poweredOn) {
+        return;
+      }
+
       const button = keyMap[event.key];
       if (!button) {
         return;
@@ -185,50 +305,86 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
+  }, [logoutPhase, playCue, poweredOn, resetControlState, unlockAudio]);
+
+  useEffect(() => {
+    let tipTimer = 0;
+    let fadeFrame = 0;
+
+    if (poweredOn) {
+      return () => window.clearTimeout(tipTimer);
+    }
+
+    tipTimer = window.setTimeout(() => {
+      setShowPowerTip(true);
+      fadeFrame = window.requestAnimationFrame(() => {
+        setPowerTipVisible(true);
+      });
+    }, 5000);
+
+    return () => {
+      window.clearTimeout(tipTimer);
+      window.cancelAnimationFrame(fadeFrame);
+    };
+  }, [poweredOn]);
+
+  const handleBackgroundReadyChange = useCallback((ready: boolean) => {
+    setBackgroundVisible(ready);
   }, []);
-
-  useEffect(() => {
-    let readyTimer = 0;
-
-    if (!poweredOn) {
-      return () => window.clearTimeout(readyTimer);
-    }
-
-    readyTimer = window.setTimeout(() => {
-      setLeaderboardReady(true);
-    }, ARCADE_BOOT_DURATION_MS);
-
-    return () => window.clearTimeout(readyTimer);
-  }, [poweredOn]);
-
-  useEffect(() => {
-    if (!poweredOn) {
-      setHoveringModel(false);
-    }
-  }, [poweredOn]);
 
   const stacked = viewport.width < 980;
   const stageHeight = useMemo(
     () =>
       stacked
         ? viewport.height
-        : Math.min(Math.max(viewport.height - 88, 640), 920),
+        : Math.max(viewport.height, 640),
     [stacked, viewport.height],
   );
-  const selectedGame = gameRegistry.find((entry) => entry.id === selectedGameId) ?? gameRegistry[0];
-  const handleTogglePower = () => {
-    unlockAudio();
-    setPoweredOn((current) => {
-      const next = !current;
-
-      if (current) {
-        setLeaderboardReady(false);
-      }
-
-      playCue(next ? "powerOn" : "powerOff");
-      return next;
-    });
+  const handleSelectGame = (gameId: string) => {
+    setSelectedGameId(gameId);
   };
+  const handlePowerOff = () => {
+    unlockAudio();
+    resetControlState();
+    setBackgroundVisible(false);
+    setPoweredOn(false);
+    setShowPowerTip(false);
+    setPowerTipVisible(false);
+    setHoveringModel(false);
+    playCue("powerOff");
+  };
+
+  const handleLogout = useCallback(async () => {
+    if (logoutPhase !== "idle") {
+      return;
+    }
+
+    unlockAudio();
+    resetControlState();
+    setLogoutPhase("poweringOff");
+    setBackgroundVisible(false);
+    setPoweredOn(false);
+    setShowPowerTip(false);
+    setPowerTipVisible(false);
+    setHoveringModel(false);
+    playCue("powerOff");
+
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, LOGOUT_POWER_OFF_MS);
+    });
+
+    setLogoutPhase("fading");
+
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, LOGOUT_FADE_MS);
+    });
+
+    if (sessionUser) {
+      await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    }
+
+    window.location.assign("/enter");
+  }, [logoutPhase, playCue, resetControlState, sessionUser, unlockAudio]);
 
   return (
     <main
@@ -237,35 +393,62 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
         position: stacked ? "fixed" : "relative",
         inset: stacked ? 0 : undefined,
         width: stacked ? "100vw" : "100%",
-        minHeight: stacked ? "100dvh" : "100vh",
-        height: stacked ? "100dvh" : "100vh",
-        padding: stacked ? 0 : pageShellStyle.padding,
+        minHeight: "100dvh",
+        height: "100dvh",
+        padding: 0,
         isolation: "isolate",
-        display: "grid",
-        gridTemplateColumns: stacked ? "1fr" : "minmax(0, 1fr) 360px",
-        gap: stacked ? 0 : "28px",
+        display: "block",
         overflow: "hidden",
-        background: poweredOn ? "var(--gameboy-screen-bg)" : "#000000",
       }}
     >
-      {poweredOn ? <GameboyCursorField variant="arcade" mouseReactive={!hoveringModel} /> : null}
+      <div
+        aria-hidden="true"
+        style={{
+          ...backgroundTintStyle,
+          zIndex: 0,
+          opacity: backgroundVisible ? 1 : 0,
+          transition: `opacity ${BACKGROUND_FADE_MS}ms ease`,
+        }}
+      />
+      {poweredOn ? (
+        <GameboyCursorField
+          variant="arcade"
+          mouseReactive={!hoveringModel}
+          visible={backgroundVisible}
+          fadeMs={BACKGROUND_FADE_MS}
+        />
+      ) : null}
+      {showPowerTip ? (
+        <div
+          style={{
+            ...powerTipStyle,
+            opacity: powerTipVisible ? 1 : 0,
+            transition: "opacity 320ms ease",
+          }}
+        >
+          Press P to turn on the Game Boy
+        </div>
+      ) : null}
       <section
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           minWidth: 0,
-          minHeight: stacked ? "100dvh" : undefined,
-          overflow: "hidden",
-          padding: stacked ? 0 : "8px 0",
+          minHeight: "100dvh",
+          overflow: stacked ? "hidden" : "visible",
+          padding: 0,
           position: "relative",
           zIndex: 1,
+          opacity: logoutPhase === "fading" ? 0 : 1,
+          transition: `opacity ${LOGOUT_FADE_MS}ms ease`,
+          pointerEvents: logoutPhase === "idle" ? "auto" : "none",
         }}
       >
         <div
           style={{
             width: stacked ? "100vw" : "100%",
-            maxWidth: stacked ? "100vw" : "980px",
+            maxWidth: stacked ? "100vw" : "1080px",
             height: stacked ? "100dvh" : `${Math.round(stageHeight)}px`,
           }}
         >
@@ -273,131 +456,40 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
             fullScreen={stacked}
             height={stageHeight}
             poweredOn={poweredOn}
-            selectedGameId={selectedGame.id}
+            selectedGameId={selectedGameId}
+            gameboyZoomed={gameboyZoomed}
             sessionUser={sessionUser}
             controlPulse={controlPulse}
             pressedButtons={pressedButtons}
+            soundLevel={soundLevel}
+            musicLevel={musicLevel}
             onControlButtonChange={applyControlState}
             onModelHoverChange={setHoveringModel}
-            onSelectGame={setSelectedGameId}
+            onSelectGame={handleSelectGame}
+            onSoundLevelChange={setSoundLevel}
+            onMusicLevelChange={setMusicLevel}
+            onPowerOff={handlePowerOff}
+            onRequestLogout={async () => {
+              await handleLogout();
+            }}
             onAudioCue={playCue}
             onMusicTrackChange={setMusicTrack}
+            onBackgroundReadyChange={handleBackgroundReadyChange}
           />
         </div>
       </section>
-
-      {!stacked ? (
-        <div style={{ position: "relative", zIndex: 1 }}>
-          <ArcadeSidebar
-            selectedGameId={selectedGame.id}
-            sessionUser={sessionUser}
-            height={stageHeight}
-            showLeaderboard={leaderboardReady && Boolean(selectedGame)}
-          />
-        </div>
-      ) : null}
       <div
+        aria-hidden="true"
         style={{
-          ...floatingControlsStyle,
-          left: stacked ? "16px" : floatingControlsStyle.left,
-          bottom: stacked ? "16px" : floatingControlsStyle.bottom,
+          position: "fixed",
+          inset: 0,
+          zIndex: 25,
+          background: "#000000",
+          opacity: logoutPhase === "fading" ? 1 : 0,
+          transition: `opacity ${LOGOUT_FADE_MS}ms ease`,
+          pointerEvents: logoutPhase === "idle" ? "none" : "auto",
         }}
-      >
-        <button
-          type="button"
-          onClick={handleTogglePower}
-          aria-label={poweredOn ? "Turn power off" : "Turn power on"}
-          title={poweredOn ? "Turn power off" : "Turn power on"}
-          style={{
-            ...floatingControlButtonStyle,
-            borderColor: poweredOn ? "rgba(116, 247, 178, 0.32)" : "rgba(232, 60, 34, 0.32)",
-            color: poweredOn ? "#74f7b2" : "#e83c22",
-          }}
-        >
-          <svg
-            aria-hidden="true"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.9"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 2.75v8.5" />
-            <path d="M7.05 5.8a8.25 8.25 0 1 0 9.9 0" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            unlockAudio();
-            setSoundOn((value) => !value);
-          }}
-          aria-label={soundOn ? "Turn sound off" : "Turn sound on"}
-          title={soundOn ? "Turn sound off" : "Turn sound on"}
-          style={{
-            ...floatingControlButtonStyle,
-            borderColor: "rgba(183, 190, 159, 0.16)",
-            color: "#f4f2ed",
-          }}
-        >
-          <svg
-            aria-hidden="true"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={soundOn ? "#f4f2ed" : "#7f8493"}
-            strokeWidth="1.9"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M4 14h4l5 4V6L8 10H4z" />
-            {soundOn ? (
-              <>
-                <path d="M17 9.5a4 4 0 0 1 0 5" />
-                <path d="M19.75 7a7.5 7.5 0 0 1 0 10" />
-              </>
-            ) : (
-              <path d="M16 8l6 8M22 8l-6 8" />
-            )}
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            unlockAudio();
-            setMusicOn((value) => !value);
-          }}
-          aria-label={musicOn ? "Turn music off" : "Turn music on"}
-          title={musicOn ? "Turn music off" : "Turn music on"}
-          style={{
-            ...floatingControlButtonStyle,
-            borderColor: "rgba(183, 190, 159, 0.16)",
-            color: "#f4f2ed",
-          }}
-        >
-          <svg
-            aria-hidden="true"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={musicOn ? "#f4f2ed" : "#7f8493"}
-            strokeWidth="1.9"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M9 18V6.5l9-2v11.5" />
-            <path d="M9 10.5l9-2" />
-            <circle cx="7" cy="18" r="2.5" />
-            <circle cx="16" cy="16" r="2.5" />
-            {musicOn ? null : <path d="M4 4l16 16" />}
-          </svg>
-        </button>
-      </div>
+      />
     </main>
   );
 }

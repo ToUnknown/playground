@@ -19,6 +19,12 @@
   --game-layout-breakpoint: 860px;
 }
 
+@font-face {
+  font-family: "Gameboy Tetris";
+  src: url("/tetris-gameboy-assets/font.ttf") format("truetype");
+  font-display: block;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

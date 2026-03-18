@@ -21,6 +21,7 @@ export default defineSchema({
   userPreferences: defineTable({
     userId: v.id("users"),
     themeId: v.string(),
+    blackjackBank: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_user_id", ["userId"]),

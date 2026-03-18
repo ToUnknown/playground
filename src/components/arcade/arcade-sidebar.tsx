@@ -284,9 +284,11 @@ export function ArcadeSidebar({
 
     if (!available || !showLeaderboard || !selectedGame) {
       if (!renderLeaderboard) {
-        setDisplayedGame(null);
-        setDisplayedLeaderboard([]);
-        setLeaderboardVisible(false);
+        firstFrame = window.requestAnimationFrame(() => {
+          setDisplayedGame(null);
+          setDisplayedLeaderboard([]);
+          setLeaderboardVisible(false);
+        });
         return () => {
           window.clearTimeout(fadeTimer);
           window.clearTimeout(swapTimer);
@@ -295,7 +297,9 @@ export function ArcadeSidebar({
         };
       }
 
-      setLeaderboardVisible(false);
+      firstFrame = window.requestAnimationFrame(() => {
+        setLeaderboardVisible(false);
+      });
       fadeTimer = window.setTimeout(() => {
         setRenderLeaderboard(false);
         setDisplayedGame(null);
@@ -320,9 +324,9 @@ export function ArcadeSidebar({
     }
 
     if (!renderLeaderboard || !displayedGame) {
-      setDisplayedGame(selectedGame);
-      setDisplayedLeaderboard(selectedLeaderboard ?? []);
       firstFrame = window.requestAnimationFrame(() => {
+        setDisplayedGame(selectedGame);
+        setDisplayedLeaderboard(selectedLeaderboard ?? []);
         setRenderLeaderboard(true);
         secondFrame = window.requestAnimationFrame(() => {
           setLeaderboardVisible(true);
@@ -338,8 +342,8 @@ export function ArcadeSidebar({
     }
 
     if (displayedGame.id === selectedGame.id) {
-      setDisplayedLeaderboard(selectedLeaderboard ?? []);
       firstFrame = window.requestAnimationFrame(() => {
+        setDisplayedLeaderboard(selectedLeaderboard ?? []);
         setLeaderboardVisible(true);
       });
 
@@ -351,7 +355,9 @@ export function ArcadeSidebar({
       };
     }
 
-    setLeaderboardVisible(false);
+    firstFrame = window.requestAnimationFrame(() => {
+      setLeaderboardVisible(false);
+    });
     swapTimer = window.setTimeout(() => {
       setDisplayedGame(selectedGame);
       setDisplayedLeaderboard(selectedLeaderboard ?? []);
@@ -385,6 +391,9 @@ export function ArcadeSidebar({
         width: "360px",
         maxWidth: "360px",
         height: `${Math.round(height)}px`,
+        boxSizing: "border-box",
+        paddingTop: "24px",
+        paddingBottom: "24px",
         background: "transparent",
         display: "flex",
         flexDirection: "column",

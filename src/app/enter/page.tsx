@@ -63,61 +63,54 @@ export default async function EnterPage() {
     >
       <GameboyCursorField variant="login" />
       <div style={{ position: "relative", zIndex: 1 }}>
-        <EnterForm />
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          right: "24px",
-          bottom: "24px",
-          zIndex: 1,
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-        }}
-      >
-        <a
-          href="mailto:Contact@to-unknown.com"
-          aria-label="Email Contact@to-unknown.com"
-          title="Contact@to-unknown.com"
-          style={{
-            width: "42px",
-            height: "42px",
-            borderRadius: "999px",
-            border: "1px solid rgba(183, 190, 159, 0.16)",
-            background: "rgba(10, 14, 9, 0.18)",
-            backdropFilter: "blur(8px)",
-            color: "#d2df93",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "inset 0 1px 0 rgba(210, 223, 147, 0.04)",
-          }}
-        >
-          <MailIcon />
-        </a>
-        <a
-          href="https://to-unknown.com"
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Visit to-unknown.com"
-          title="https://to-unknown.com"
-          style={{
-            width: "42px",
-            height: "42px",
-            borderRadius: "999px",
-            border: "1px solid rgba(183, 190, 159, 0.16)",
-            background: "rgba(10, 14, 9, 0.18)",
-            backdropFilter: "blur(8px)",
-            color: "#d2df93",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "inset 0 1px 0 rgba(210, 223, 147, 0.04)",
-          }}
-        >
-          <GlobeIcon />
-        </a>
+        <EnterForm
+          footer={
+            <>
+              <a
+                href="mailto:Contact@to-unknown.com"
+                aria-label="Email Contact@to-unknown.com"
+                title="Contact@to-unknown.com"
+                style={{
+                  width: "42px",
+                  height: "42px",
+                  borderRadius: "999px",
+                  border: "1px solid rgba(183, 190, 159, 0.16)",
+                  background: "rgba(10, 14, 9, 0.18)",
+                  backdropFilter: "blur(8px)",
+                  color: "#d2df93",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "inset 0 1px 0 rgba(210, 223, 147, 0.04)",
+                }}
+              >
+                <MailIcon />
+              </a>
+              <a
+                href="https://to-unknown.com"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Visit to-unknown.com"
+                title="https://to-unknown.com"
+                style={{
+                  width: "42px",
+                  height: "42px",
+                  borderRadius: "999px",
+                  border: "1px solid rgba(183, 190, 159, 0.16)",
+                  background: "rgba(10, 14, 9, 0.18)",
+                  backdropFilter: "blur(8px)",
+                  color: "#d2df93",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "inset 0 1px 0 rgba(210, 223, 147, 0.04)",
+                }}
+              >
+                <GlobeIcon />
+              </a>
+            </>
+          }
+        />
       </div>
     </main>
   );

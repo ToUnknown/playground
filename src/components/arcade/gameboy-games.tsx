@@ -9,12 +9,9 @@ import {
   type CSSProperties,
 } from "react";
 
-import type { SessionUser, SoloGameResult } from "@/lib/contracts";
+import type { LeaderboardEntry, SessionUser, SoloGameResult } from "@/lib/contracts";
 import { useScoreSave } from "@/games/shared/use-score-save";
-import {
-  loadGameboyTetrisAssets,
-  type GameboyTetrisAssets,
-} from "@/games/tetris/gameboy-tetris-assets";
+import { ensureGameboyTetrisFont } from "@/games/tetris/gameboy-tetris-assets";
 import {
   GAMEBOY_TETRIS_DARK,
   GAMEBOY_TETRIS_LIGHT,
@@ -44,6 +41,44 @@ export type GameboyControlPulse = {
 };
 
 export type GameboyPressedButtons = Partial<Record<GameboyControlButton, boolean>>;
+export type GameboyMenuScreen =
+  | "main"
+  | "games"
+  | "leaderboardGames"
+  | "leaderboardEntries"
+  | "settings";
+
+export type GameboyMenuView =
+  | {
+      screen: "main";
+      selectedIndex: number;
+      balance: number | null;
+    }
+  | {
+      screen: "games";
+      selectedIndex: number;
+      balance: number | null;
+      games: Array<{ name: string }>;
+    }
+  | {
+      screen: "leaderboardGames";
+      selectedIndex: number;
+      games: Array<{ name: string }>;
+    }
+  | {
+      screen: "leaderboardEntries";
+      selectedIndex: number;
+      gameName: string;
+      entries: LeaderboardEntry[] | null;
+    }
+  | {
+      screen: "settings";
+      selectedIndex: number;
+      username: string;
+      soundLevel: number;
+      musicLevel: number;
+      pendingLogout: boolean;
+    };
 
 const SCREEN_WIDTH = GAMEBOY_SCREEN_WIDTH;
 const SCREEN_HEIGHT = GAMEBOY_SCREEN_HEIGHT;
@@ -54,6 +89,8 @@ const SCREEN_DARKEST = "#0f380f";
 const SCREEN_PANEL = GAMEBOY_TETRIS_LIGHT;
 const SCREEN_PANEL_EDGE = GAMEBOY_TETRIS_DARK;
 const PIXEL_FONT = '"Gameboy Tetris", "IBM Plex Sans", monospace';
+const SPLASH_TITLE_FONT = `16px ${PIXEL_FONT}`;
+const BRACKET_FONT = 'bold 16px "IBM Plex Sans", monospace';
 
 const menuShellStyle: CSSProperties = {
   width: "100%",
@@ -100,69 +137,6 @@ const bootShellStyle: CSSProperties = {
   fontFamily: PIXEL_FONT,
   background: SCREEN_PANEL,
 };
-
-function drawScreenFrame(context: CanvasRenderingContext2D, title: string, meta: string) {
-  context.fillStyle = SCREEN_MID;
-  context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-  context.fillStyle = SCREEN_DARKEST;
-  context.font = 'bold 14px "IBM Plex Sans", monospace';
-  context.fillText(title.toUpperCase(), 18, 26);
-
-  context.textAlign = "right";
-  context.fillText(meta.toUpperCase(), SCREEN_WIDTH - 18, 26);
-  context.textAlign = "left";
-}
-
-function drawArcadeChrome(
-  context: CanvasRenderingContext2D,
-  title: string,
-  meta: string,
-  bodyTop: number,
-  bodyHeight: number,
-) {
-  context.fillStyle = SCREEN_PANEL_EDGE;
-  context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-  context.fillStyle = SCREEN_PANEL_EDGE;
-  context.fillRect(24, 10, SCREEN_WIDTH - 48, 48);
-  context.fillRect(24, bodyTop - 10, SCREEN_WIDTH - 48, bodyHeight + 20);
-
-  context.fillStyle = SCREEN_PANEL;
-  context.fillRect(32, 16, SCREEN_WIDTH - 64, 36);
-  context.strokeStyle = SCREEN_PANEL_EDGE;
-  context.lineWidth = 2;
-  context.strokeRect(32.5, 16.5, SCREEN_WIDTH - 65, 35);
-
-  context.fillStyle = SCREEN_PANEL_EDGE;
-  context.font = `14px ${PIXEL_FONT}`;
-  context.fillText(title.toUpperCase(), 44, 38);
-  context.textAlign = "right";
-  context.fillText(meta.toUpperCase(), SCREEN_WIDTH - 44, 38);
-  context.textAlign = "left";
-}
-
-function drawVerticalWallColumns(
-  context: CanvasRenderingContext2D,
-  assets: GameboyTetrisAssets | null,
-  left: number,
-  top: number,
-  height: number,
-  right: number,
-) {
-  context.fillStyle = SCREEN_PANEL_EDGE;
-  context.fillRect(left, top, 12, height);
-  context.fillRect(right, top, 12, height);
-
-  if (!assets) {
-    return;
-  }
-
-  for (let offset = -2; offset < height + 4; offset += 8) {
-    context.drawImage(assets.wall, left + 1, top + offset, 10, 8);
-    context.drawImage(assets.wall, right + 1, top + offset, 10, 8);
-  }
-}
 
 function drawInsetPanel(
   context: CanvasRenderingContext2D,
@@ -790,72 +764,254 @@ export function GameboyMenuScreen({
   );
 }
 
-function drawMenuCanvas(
-  context: CanvasRenderingContext2D,
-  games: Array<{ name: string; modes: number }>,
-  selectedIndex: number,
-  assets: GameboyTetrisAssets | null,
-) {
-  const bodyTop = 64;
-  const bodyHeight = 196;
-  const wallLeft = 34;
-  const wallRight = SCREEN_WIDTH - 46;
-  const listLeft = 46;
-  const listTop = 82;
-  const listWidth = SCREEN_WIDTH - 92;
+function drawMenuHeader(context: CanvasRenderingContext2D, title: string, rightLabel?: string) {
+  context.fillStyle = SCREEN_PANEL;
+  context.font = SPLASH_TITLE_FONT;
+  context.textAlign = "left";
+  context.fillText(title.toUpperCase(), 24, 32);
 
-  drawArcadeChrome(
-    context,
-    "Game Select",
-    String(selectedIndex + 1).padStart(2, "0"),
-    bodyTop,
-    bodyHeight,
-  );
-  drawVerticalWallColumns(context, assets, wallLeft, bodyTop, bodyHeight, wallRight);
-
-  games.forEach((game, index) => {
-    const top = listTop + index * 54;
-    drawInsetPanel(context, listLeft, top, listWidth, 42);
-    if (index === selectedIndex) {
-      context.fillStyle = "rgba(64, 66, 67, 0.12)";
-      context.fillRect(listLeft + 3, top + 3, listWidth - 6, 36);
-    }
-
-    context.fillStyle = SCREEN_PANEL_EDGE;
-    context.font = `18px ${PIXEL_FONT}`;
-    context.textAlign = "center";
-    context.fillText(game.name.toUpperCase(), listLeft + listWidth / 2, top + 27);
-
-    if (index === selectedIndex) {
-      context.font = 'bold 16px "IBM Plex Sans", monospace';
-      context.fillText("<", listLeft + 18, top + 27);
-      context.fillText(">", listLeft + listWidth - 18, top + 27);
-      context.font = `18px ${PIXEL_FONT}`;
-    }
-
+  if (rightLabel) {
+    context.textAlign = "right";
+    context.fillText(rightLabel.toUpperCase(), SCREEN_WIDTH - 24, 32);
     context.textAlign = "left";
-  });
-
+  }
 }
 
-export function GameboyMenuCanvas({
-  games,
-  selectedIndex,
-}: {
-  games: Array<{ name: string; modes: number }>;
-  selectedIndex: number;
-}) {
+function drawMenuRow(
+  context: CanvasRenderingContext2D,
+  label: string,
+  top: number,
+  width: number,
+  selected: boolean,
+  options?: {
+    leftLabel?: string;
+    rightLabel?: string;
+    center?: boolean;
+    compact?: boolean;
+  },
+) {
+  const x = 32;
+  const height = options?.compact ? 32 : 40;
+  const labelX = options?.center ? x + width / 2 : x + (options?.leftLabel ? 40 : 14);
+
+  drawInsetPanel(context, x, top, width, height);
+  if (selected) {
+    context.fillStyle = "rgba(64, 66, 67, 0.12)";
+    context.fillRect(x + 3, top + 3, width - 6, height - 6);
+  }
+
+  context.fillStyle = SCREEN_PANEL_EDGE;
+  context.font = options?.compact ? `10px ${PIXEL_FONT}` : SPLASH_TITLE_FONT;
+  context.textBaseline = "middle";
+
+  if (options?.leftLabel) {
+    context.textAlign = "left";
+    context.fillText(options.leftLabel, x + 12, top + height / 2 + 1);
+  }
+
+  if (options?.rightLabel) {
+    context.textAlign = "right";
+    context.fillText(options.rightLabel, x + width - 12, top + height / 2 + 1);
+  }
+
+  context.textAlign = options?.center ? "center" : "left";
+  context.fillText(label.toUpperCase(), labelX, top + height / 2 + 1);
+  context.textBaseline = "alphabetic";
+  context.textAlign = "left";
+}
+
+function drawVolumeMeter(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  level: number,
+) {
+  const clamped = Math.max(0, Math.min(10, level));
+
+  for (let index = 0; index < 10; index += 1) {
+    context.fillStyle = index < clamped ? SCREEN_PANEL_EDGE : "rgba(15, 56, 15, 0.14)";
+    context.fillRect(x + index * 10, y, 8, 8);
+  }
+}
+
+function drawMainMenu(
+  context: CanvasRenderingContext2D,
+  selectedIndex: number,
+  balance: number | null,
+) {
+  const items = ["Play", "Leaderboards", "Settings", "Turn off"] as const;
+
+  context.fillStyle = SCREEN_PANEL_EDGE;
+  context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+  drawMenuHeader(context, "Menu", balance !== null ? `$${Math.max(0, Math.floor(balance))}` : undefined);
+
+  items.forEach((item, index) => {
+    const top = 56 + index * 50;
+    drawMenuRow(context, item, top, SCREEN_WIDTH - 64, index === selectedIndex, {
+      center: true,
+    });
+
+    if (index === selectedIndex) {
+      context.fillStyle = SCREEN_PANEL_EDGE;
+      context.font = BRACKET_FONT;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText("<", 48, top + 20);
+      context.fillText(">", SCREEN_WIDTH - 48, top + 20);
+      context.textBaseline = "alphabetic";
+      context.textAlign = "left";
+    }
+  });
+}
+
+function drawGameListMenu(
+  context: CanvasRenderingContext2D,
+  title: string,
+  games: Array<{ name: string }>,
+  selectedIndex: number,
+  balance?: number | null,
+) {
+  context.fillStyle = SCREEN_PANEL_EDGE;
+  context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+  drawMenuHeader(
+    context,
+    title,
+    typeof balance === "number" ? `$${Math.max(0, Math.floor(balance))}` : undefined,
+  );
+
+  games.forEach((game, index) => {
+    const top = 58 + index * 50;
+    drawMenuRow(context, game.name, top, SCREEN_WIDTH - 64, index === selectedIndex, {
+      center: true,
+    });
+
+    if (index === selectedIndex) {
+      context.fillStyle = SCREEN_PANEL_EDGE;
+      context.font = BRACKET_FONT;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText("<", 48, top + 20);
+      context.fillText(">", SCREEN_WIDTH - 48, top + 20);
+      context.textBaseline = "alphabetic";
+      context.textAlign = "left";
+    }
+  });
+}
+
+function drawLeaderboardEntries(
+  context: CanvasRenderingContext2D,
+  gameName: string,
+  entries: LeaderboardEntry[] | null,
+  selectedIndex: number,
+) {
+  context.fillStyle = SCREEN_PANEL_EDGE;
+  context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+  drawMenuHeader(context, gameName);
+
+  if (!entries) {
+    context.fillStyle = SCREEN_PANEL;
+    context.textAlign = "center";
+    context.font = `10px ${PIXEL_FONT}`;
+    context.fillText("LOADING...", SCREEN_WIDTH / 2, 138);
+    context.textAlign = "left";
+    return;
+  }
+
+  if (!entries.length) {
+    context.fillStyle = SCREEN_PANEL;
+    context.textAlign = "center";
+    context.font = `10px ${PIXEL_FONT}`;
+    context.fillText("NO SCORES YET", SCREEN_WIDTH / 2, 138);
+    context.textAlign = "left";
+    return;
+  }
+
+  const visibleCount = 7;
+  const startIndex = Math.min(
+    Math.max(0, selectedIndex - Math.floor(visibleCount / 2)),
+    Math.max(0, entries.length - visibleCount),
+  );
+  const visibleEntries = entries.slice(startIndex, startIndex + visibleCount);
+
+  visibleEntries.forEach((entry, offset) => {
+    const actualIndex = startIndex + offset;
+    const top = 52 + offset * 32;
+    drawMenuRow(context, entry.username, top, SCREEN_WIDTH - 64, actualIndex === selectedIndex, {
+      compact: true,
+      leftLabel: `${entry.rank}`.padStart(2, "0"),
+      rightLabel: `${entry.score}`,
+    });
+  });
+}
+
+function drawSettingsMenu(
+  context: CanvasRenderingContext2D,
+  username: string,
+  soundLevel: number,
+  musicLevel: number,
+  selectedIndex: number,
+  pendingLogout: boolean,
+) {
+  context.fillStyle = SCREEN_PANEL_EDGE;
+  context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+  drawMenuHeader(context, username);
+
+  const rowWidth = SCREEN_WIDTH - 64;
+
+  drawMenuRow(context, "SOUNDS", 62, rowWidth, selectedIndex === 0);
+  drawVolumeMeter(context, 178, 76, soundLevel);
+
+  drawMenuRow(context, "MUSIC", 114, rowWidth, selectedIndex === 1);
+  drawVolumeMeter(context, 178, 128, musicLevel);
+
+  drawMenuRow(context, pendingLogout ? "..." : "Log out", 178, rowWidth, selectedIndex === 2, {
+    center: true,
+  });
+}
+
+function drawMenuCanvas(context: CanvasRenderingContext2D, view: GameboyMenuView) {
+  switch (view.screen) {
+    case "main":
+      drawMainMenu(context, view.selectedIndex, view.balance);
+      return;
+    case "games":
+      drawGameListMenu(context, "Games", view.games, view.selectedIndex, view.balance);
+      return;
+    case "leaderboardGames":
+      drawGameListMenu(context, "Leaderboards", view.games, view.selectedIndex);
+      return;
+    case "leaderboardEntries":
+      drawLeaderboardEntries(context, view.gameName, view.entries, view.selectedIndex);
+      return;
+    case "settings":
+      drawSettingsMenu(
+        context,
+        view.username,
+        view.soundLevel,
+        view.musicLevel,
+        view.selectedIndex,
+        view.pendingLogout,
+      );
+      return;
+    default:
+      return;
+  }
+}
+
+export function GameboyMenuCanvas({ view }: { view: GameboyMenuView }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [assets, setAssets] = useState<GameboyTetrisAssets | null>(null);
+  const [fontReady, setFontReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    void loadGameboyTetrisAssets().then((loadedAssets) => {
-      if (!cancelled) {
-        setAssets(loadedAssets);
-      }
-    });
+    void ensureGameboyTetrisFont()
+      .catch(() => undefined)
+      .then(() => {
+        if (!cancelled) {
+          setFontReady(true);
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -865,13 +1021,13 @@ export function GameboyMenuCanvas({
   useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
-    if (!canvas || !context) {
+    if (!canvas || !context || !fontReady) {
       return;
     }
 
     configureGameboyScreenCanvas(canvas, context);
-    drawMenuCanvas(context, games, selectedIndex, assets);
-  }, [assets, games, selectedIndex]);
+    drawMenuCanvas(context, view);
+  }, [fontReady, view]);
 
   return (
     <canvas
@@ -967,30 +1123,27 @@ function drawBootCanvas(
   context: CanvasRenderingContext2D,
   progress: number,
 ) {
-  const bodyTop = 76;
-  const bodyHeight = 136;
-
-  drawArcadeChrome(context, "System Boot", "GB-01", bodyTop, bodyHeight);
-  drawInsetPanel(context, 62, 96, 196, 94);
-
   context.fillStyle = SCREEN_PANEL_EDGE;
-  context.textAlign = "center";
-  context.font = `16px ${PIXEL_FONT}`;
-  context.fillText("LOADING...", SCREEN_WIDTH / 2, 128);
+  context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
   context.fillStyle = SCREEN_PANEL;
-  context.fillRect(82, 160, 156, 16);
-  context.strokeStyle = SCREEN_PANEL_EDGE;
-  context.strokeRect(81.5, 159.5, 157, 17);
+  context.textAlign = "center";
+  context.font = SPLASH_TITLE_FONT;
+  context.fillText("LOADING...", SCREEN_WIDTH / 2, 132);
 
-  context.fillStyle = SCREEN_PANEL_EDGE;
-  context.fillRect(84, 162, Math.round(152 * progress), 12);
+  context.strokeStyle = SCREEN_PANEL;
+  context.lineWidth = 2;
+  context.strokeRect(81.5, 161.5, 157, 17);
+
+  context.fillStyle = SCREEN_PANEL;
+  context.fillRect(84, 164, Math.round(152 * progress), 12);
   context.textAlign = "left";
 }
 
 export function GameboyBootCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [progress, setProgress] = useState(0);
+  const [fontReady, setFontReady] = useState(false);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -1000,15 +1153,31 @@ export function GameboyBootCanvas() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    void ensureGameboyTetrisFont()
+      .catch(() => undefined)
+      .then(() => {
+        if (!cancelled) {
+          setFontReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
-    if (!canvas || !context) {
+    if (!canvas || !context || !fontReady) {
       return;
     }
 
     configureGameboyScreenCanvas(canvas, context);
     drawBootCanvas(context, progress);
-  }, [progress]);
+  }, [fontReady, progress]);
 
   return (
     <canvas

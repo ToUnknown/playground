@@ -10,7 +10,12 @@ export const gameRegistry: GameManifest[] = [
     scoreType: "points",
     thumbnail: "S-01",
     accent: "#74f7b2",
-    controls: ["Arrow keys to steer", "Eat shards", "Do not touch walls or yourself"],
+    controls: [
+      "Arrow keys to steer",
+      "Eat shards",
+      "Do not touch walls or yourself",
+      "Z toggles zoom",
+    ],
     modes: [
       {
         id: "solo",
@@ -41,6 +46,7 @@ export const gameRegistry: GameManifest[] = [
       "C or A holds the current piece",
       "Space, X, or B hard drops",
       "Enter or Start begins, pauses, and restarts",
+      "Z toggles zoom",
     ],
     modes: [
       {
@@ -48,6 +54,32 @@ export const gameRegistry: GameManifest[] = [
         label: "Solo",
         description: "Score-chasing Game Boy Tetris run.",
         leaderboardLabel: "High score",
+      },
+    ],
+  },
+  {
+    id: "blackjack",
+    name: "Blackjack",
+    tag: "Card hustle",
+    description:
+      "Minimal Game Boy Blackjack with adjustable bets, pixel cards, and bank-climbing score runs.",
+    scoreType: "points",
+    thumbnail: "B-03",
+    accent: "#d2df93",
+    controls: [
+      "Arrow up/down adjusts your bet",
+      "Enter or Start deals and advances",
+      "A hits",
+      "B or X stands",
+      "Z toggles zoom",
+      "Shift or Select exits",
+    ],
+    modes: [
+      {
+        id: "solo",
+        label: "Solo",
+        description: "Run your bank as high as you can before you flame out.",
+        leaderboardLabel: "Max bank",
       },
     ],
   },

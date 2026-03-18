@@ -10,6 +10,8 @@ type TrailPoint = {
   y: number;
   life: number;
   strength: number;
+  velocityX: number;
+  velocityY: number;
 };
 
 type PointerState = {
@@ -18,6 +20,9 @@ type PointerState = {
   y: number;
   renderX: number;
   renderY: number;
+  velocityX: number;
+  velocityY: number;
+  lastMoveAt: number;
   lastSpawn: number;
   lastTrailX: number;
   lastTrailY: number;
@@ -91,6 +96,12 @@ const MOTIF_PATTERNS: number[][][] = [
   ],
 ];
 const SCREEN_BG = "#141b0f";
+const POINTER_IDLE_TIMEOUT_MS = 64;
+const POINTER_IDLE_FADE_DECAY = 0.0045;
+const POINTER_DRIFT_DECAY = 0.0065;
+const TRAIL_DRIFT_TRANSFER = 0.9;
+const TRAIL_DRIFT_DECAY = 0.009;
+const TRAIL_FLOW_SPEED = 0.016;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -183,9 +194,13 @@ function clampIndex(value: number, max: number) {
 export function GameboyCursorField({
   variant = "arcade",
   mouseReactive = true,
+  visible = true,
+  fadeMs = 0,
 }: {
   variant?: GameboyCursorFieldVariant;
   mouseReactive?: boolean;
+  visible?: boolean;
+  fadeMs?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<number>(0);
@@ -205,6 +220,9 @@ export function GameboyCursorField({
     y: 0,
     renderX: 0,
     renderY: 0,
+    velocityX: 0,
+    velocityY: 0,
+    lastMoveAt: 0,
     lastSpawn: 0,
     lastTrailX: 0,
     lastTrailY: 0,
@@ -315,32 +333,52 @@ export function GameboyCursorField({
     createMusicField(Math.ceil(width / cellSize), Math.ceil(height / cellSize));
   });
 
-  const pushTrailPoint = useEffectEvent((x: number, y: number, strength: number) => {
-    trailRef.current.unshift({
-      x,
-      y,
-      life: 1,
-      strength,
-    });
-    trailRef.current = trailRef.current.slice(0, 18);
-  });
+  const pushTrailPoint = useEffectEvent(
+    (x: number, y: number, strength: number, velocityX = 0, velocityY = 0) => {
+      trailRef.current.unshift({
+        x,
+        y,
+        life: 1,
+        strength,
+        velocityX: velocityX * TRAIL_DRIFT_TRANSFER,
+        velocityY: velocityY * TRAIL_DRIFT_TRANSFER,
+      });
+      trailRef.current = trailRef.current.slice(0, 18);
+    },
+  );
 
   const handlePointerMove = useEffectEvent((event: PointerEvent) => {
     if (!mouseReactive) {
       return;
     }
 
+    const now = performance.now();
     const pointer = pointerRef.current;
     const wasActive = pointer.active;
+    const moved = !wasActive || pointer.x !== event.clientX || pointer.y !== event.clientY;
+
+    if (!moved) {
+      return;
+    }
+
+    const previousX = wasActive ? pointer.x : event.clientX;
+    const previousY = wasActive ? pointer.y : event.clientY;
+    const deltaMs = Math.max(now - (pointer.lastMoveAt || now), 16);
+    const nextVelocityX = (event.clientX - previousX) / deltaMs;
+    const nextVelocityY = (event.clientY - previousY) / deltaMs;
 
     pointer.active = true;
     pointer.x = event.clientX;
     pointer.y = event.clientY;
+    pointer.velocityX = wasActive ? mix(pointer.velocityX, nextVelocityX, 0.42) : nextVelocityX;
+    pointer.velocityY = wasActive ? mix(pointer.velocityY, nextVelocityY, 0.42) : nextVelocityY;
+    pointer.lastMoveAt = now;
     if (!wasActive) {
       pointer.renderX = event.clientX;
       pointer.renderY = event.clientY;
       pointer.lastTrailX = event.clientX;
       pointer.lastTrailY = event.clientY;
+      pointer.lastSpawn = now;
     }
   });
 
@@ -350,22 +388,18 @@ export function GameboyCursorField({
     }
 
     const pointer = pointerRef.current;
-    pointer.active = true;
     pointer.x = event.clientX;
     pointer.y = event.clientY;
-    pointer.renderX = event.clientX;
-    pointer.renderY = event.clientY;
-    pointer.lastSpawn = performance.now();
-    pointer.lastTrailX = event.clientX;
-    pointer.lastTrailY = event.clientY;
-    pushTrailPoint(event.clientX, event.clientY, 1.65);
+    if (pointer.active) {
+      pointer.renderX = event.clientX;
+      pointer.renderY = event.clientY;
+    }
   });
 
-  const animate = useEffectEvent((time: number) => {
+  const animateFrame = useEffectEvent((time: number) => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) {
-      frameRef.current = window.requestAnimationFrame(animate);
       return;
     }
 
@@ -406,6 +440,17 @@ export function GameboyCursorField({
 
     const trail = trailRef.current;
     for (let index = trail.length - 1; index >= 0; index -= 1) {
+      const point = trail[index];
+      const driftDecay = Math.exp(-deltaMs * TRAIL_DRIFT_DECAY);
+      const flowX =
+        Math.sin((point.y + time * 0.08) * 0.012 + point.life * 2.4) * TRAIL_FLOW_SPEED * point.life;
+      const flowY =
+        Math.cos((point.x - time * 0.06) * 0.01 + point.life * 1.8) * TRAIL_FLOW_SPEED * point.life;
+
+      point.x = clamp(point.x + (point.velocityX + flowX) * deltaMs, -cellSize * 8, width + cellSize * 8);
+      point.y = clamp(point.y + (point.velocityY + flowY) * deltaMs, -cellSize * 8, height + cellSize * 8);
+      point.velocityX *= driftDecay;
+      point.velocityY *= driftDecay;
       trail[index].life -= deltaMs * (trail[index].strength > 1 ? 0.00034 : 0.00018);
       if (trail[index].life <= 0) {
         trail.splice(index, 1);
@@ -413,21 +458,52 @@ export function GameboyCursorField({
     }
 
     const pointer = pointerRef.current;
+    let idleFade = 1;
     if (pointer.active) {
-      const smoothing = 1 - Math.exp(-deltaMs * 0.022);
-      pointer.renderX = mix(pointer.renderX, pointer.x, smoothing);
-      pointer.renderY = mix(pointer.renderY, pointer.y, smoothing);
+      const idleTime = time - pointer.lastMoveAt;
+      const isIdle = idleTime > POINTER_IDLE_TIMEOUT_MS;
 
+      if (isIdle) {
+        idleFade = Math.exp(-(idleTime - POINTER_IDLE_TIMEOUT_MS) * POINTER_IDLE_FADE_DECAY);
+        const decay = Math.exp(-deltaMs * POINTER_DRIFT_DECAY);
+        const flowX = Math.sin((pointer.renderY + time * 0.1) * 0.012) * TRAIL_FLOW_SPEED * idleFade;
+        const flowY = Math.cos((pointer.renderX - time * 0.08) * 0.01) * TRAIL_FLOW_SPEED * idleFade;
+        pointer.velocityX *= decay;
+        pointer.velocityY *= decay;
+        pointer.renderX = clamp(pointer.renderX + (pointer.velocityX + flowX) * deltaMs, 0, width);
+        pointer.renderY = clamp(pointer.renderY + (pointer.velocityY + flowY) * deltaMs, 0, height);
+
+        if (idleFade < 0.02) {
+          pointer.active = false;
+          pointer.velocityX = 0;
+          pointer.velocityY = 0;
+        }
+      } else {
+        const smoothing = 1 - Math.exp(-deltaMs * 0.022);
+        pointer.renderX = mix(pointer.renderX, pointer.x, smoothing);
+        pointer.renderY = mix(pointer.renderY, pointer.y, smoothing);
+      }
+    }
+
+    if (pointer.active) {
       const trailDistance = Math.hypot(pointer.renderX - pointer.lastTrailX, pointer.renderY - pointer.lastTrailY);
       if (trailDistance > cellSize * 0.28 || time - pointer.lastSpawn > 72) {
-        pushTrailPoint(pointer.renderX, pointer.renderY, 0.92);
+        pushTrailPoint(
+          pointer.renderX,
+          pointer.renderY,
+          0.32 + idleFade * 0.6,
+          pointer.velocityX,
+          pointer.velocityY,
+        );
         pointer.lastSpawn = time;
         pointer.lastTrailX = pointer.renderX;
         pointer.lastTrailY = pointer.renderY;
       }
     }
 
-    const pointerTargetStrength = mouseReactive && pointer.active ? 1 : 0;
+    const pointerSpeed = Math.hypot(pointer.velocityX, pointer.velocityY);
+    const pointerTargetStrength =
+      mouseReactive && pointer.active ? clamp(idleFade * 0.18 + pointerSpeed * 9, 0, 1) : 0;
     pointerVisualStrengthRef.current = mix(
       pointerVisualStrengthRef.current,
       pointerTargetStrength,
@@ -573,7 +649,6 @@ export function GameboyCursorField({
       context.fillRect(0, y, width, 1);
     }
 
-    frameRef.current = window.requestAnimationFrame(animate);
   });
 
   useEffect(() => {
@@ -594,6 +669,8 @@ export function GameboyCursorField({
 
     const handleBlur = () => {
       pointerRef.current.active = false;
+      pointerRef.current.velocityX = 0;
+      pointerRef.current.velocityY = 0;
     };
     const handleMusicEnergy = (event: Event) => {
       const customEvent = event as CustomEvent<GameboyMusicEnergyDetail>;
@@ -611,7 +688,12 @@ export function GameboyCursorField({
       };
     };
 
-    frameRef.current = window.requestAnimationFrame(animate);
+    const tick = (time: number) => {
+      animateFrame(time);
+      frameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    frameRef.current = window.requestAnimationFrame(tick);
     window.addEventListener("resize", resizeCanvas);
     window.addEventListener("pointermove", handlePointerMove, { passive: true });
     window.addEventListener("pointerdown", handlePointerDown, { passive: true });
@@ -655,7 +737,7 @@ export function GameboyCursorField({
       };
       createMusicField(0, 0);
     };
-  }, [animate, createMusicField, handlePointerDown, handlePointerMove, mouseReactive, resizeCanvas, stampMusicCharge, variant]);
+  }, [mouseReactive, variant]);
 
   return (
     <canvas
@@ -669,7 +751,8 @@ export function GameboyCursorField({
         display: "block",
         pointerEvents: "none",
         zIndex: 0,
-        opacity: variant === "login" ? 1 : 0.9,
+        opacity: visible ? (variant === "login" ? 1 : 0.9) : 0,
+        transition: fadeMs > 0 ? `opacity ${fadeMs}ms ease` : undefined,
       }}
     />
   );

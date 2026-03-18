@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Center, Environment, PerspectiveCamera, useGLTF } from "@react-three/drei";
 import {
@@ -19,7 +19,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import type { Material, MeshStandardMaterial } from "three";
+import type { Material, MeshStandardMaterial, PerspectiveCamera as ThreePerspectiveCamera } from "three";
 import type { GLTF } from "three-stdlib";
 import type {
   GameboyControlButton,
@@ -83,9 +83,9 @@ export type GameboyViewerConfig = {
 
 const DEFAULT_SCREEN_MOUNT: GameboyScreenMount = {
   anchorName: "screen",
-  position: [0.025, 0.18, 0],
+  position: [0.025, 0.1807, 0],
   rotation: [0, Math.PI / 2, 0],
-  size: [0.08, 0.0632],
+  size: [0.08, 0.0648],
   tint: "#d2df93",
 };
 
@@ -117,8 +117,8 @@ const DEFAULT_VIEWER_CONFIG: Omit<GameboyViewerConfig, "modelUrl" | "fullScreen"
       y: [-0.6, 0.6],
     },
     pointerFollow: {
-      x: 0.15,
-      y: 0.15,
+      x: 0.2,
+      y: 0.2,
     },
   },
 };
@@ -136,6 +136,7 @@ const CENTER_BUTTON_PRESS_DEPTH = 0.00135;
 const DPAD_PRESS_DEPTH = 0.0024;
 const DPAD_TILT = 0.12;
 const POINTER_PRESS_VISUAL_MS = 110;
+const POINTER_FOLLOW_IDLE_MS = 2000;
 const MODEL_REVEAL_ENTRY_X = 0.02;
 const MODEL_REVEAL_ENTRY_Y = -0.06;
 const MODEL_REVEAL_ENTRY_Z = 0.44;
@@ -149,12 +150,13 @@ const MODEL_REVEAL_OVERSHOOT_TILT_X = 0.02;
 const MODEL_REVEAL_OVERSHOOT_TILT_Y = -0.14;
 const MODEL_REVEAL_OVERSHOOT_TILT_Z = -0.015;
 const MODEL_REVEAL_START_SCALE = 0.04;
-const MODEL_REVEAL_OVERSHOOT_SCALE = 1.045;
-const MODEL_REVEAL_DELAY_MS = 70;
+const MODEL_REVEAL_DELAY_MS = 0;
 const MODEL_REVEAL_DURATION_MS = 860;
 const MODEL_REVEAL_ENTRY_PORTION = 0.82;
 const MODEL_INTERACTION_DELAY_MS = 1000;
 const MODEL_INTERACTION_FADE_MS = 260;
+const VIEWER_TRANSFORM_DAMPING = 5.5;
+const VIEWER_CAMERA_DAMPING = 4.8;
 
 type InteractiveModelParts = {
   body: Group;
@@ -710,7 +712,6 @@ function ModelRig({
   pointerInteraction,
   onControlHoverChange,
   onModelHoverChange,
-  onRevealStart,
 }: {
   modelUrl: string;
   config: GameboyViewerConfig;
@@ -724,11 +725,17 @@ function ModelRig({
   pointerInteraction: RefObject<Map<number, PointerInteractionType>>;
   onControlHoverChange?: (hovering: boolean) => void;
   onModelHoverChange?: (hovering: boolean) => void;
-  onRevealStart?: () => void;
 }) {
   const { scene } = useGLTF(modelUrl) as GameboyGLTF;
+  const [initialModelTransform] = useState(() => ({
+    position: [...config.modelTransform.position] as [number, number, number],
+    rotation: [...config.modelTransform.rotation] as [number, number, number],
+    scale: config.modelTransform.scale,
+  }));
+  const modelRootRef = useRef<Group>(null);
   const interactionRigRef = useRef<Group>(null);
   const revealRigRef = useRef<Group>(null);
+  const modelTransformRef = useRef<Group>(null);
   const dpadPivotRef = useRef<Group>(null);
   const settledRotationRef = useRef(new Vector2(0, 0));
   const revealStartedAtRef = useRef<number | null>(null);
@@ -737,7 +744,6 @@ function ModelRig({
   const pointerVisualUntilRef = useRef(createButtonTimeRecord());
   const onControlButtonChangeRef = useRef(onControlButtonChange);
   const onModelHoverChangeRef = useRef(onModelHoverChange);
-  const onRevealStartRef = useRef(onRevealStart);
 
   useEffect(() => {
     onControlButtonChangeRef.current = onControlButtonChange;
@@ -747,14 +753,9 @@ function ModelRig({
     onModelHoverChangeRef.current = onModelHoverChange;
   }, [onModelHoverChange]);
 
-  useEffect(() => {
-    onRevealStartRef.current = onRevealStart;
-  }, [onRevealStart]);
-
   useLayoutEffect(() => {
     settledRotationRef.current.set(0, 0);
-    revealStartedAtRef.current = performance.now() + MODEL_REVEAL_DELAY_MS;
-    onRevealStartRef.current?.();
+    revealStartedAtRef.current = null;
   }, [modelUrl]);
 
   const modelParts = useMemo(() => {
@@ -961,12 +962,14 @@ function ModelRig({
     updatePointerButton(event.pointerId, resolveDpadDirection(dpad, event.point));
   };
 
-  useFrame((_, delta) => {
+  useFrame(({ clock }, delta) => {
+    const modelRoot = modelRootRef.current;
     const interactionRig = interactionRigRef.current;
     const revealRig = revealRigRef.current;
+    const modelTransform = modelTransformRef.current;
     const buttons = buttonMeshesRef.current;
     const transforms = baseTransformsRef.current;
-    if (!interactionRig || !revealRig) {
+    if (!modelRoot || !interactionRig || !revealRig || !modelTransform) {
       return;
     }
 
@@ -1027,8 +1030,58 @@ function ModelRig({
       delta,
     );
 
-    const revealStartedAt = revealStartedAtRef.current;
-    const now = performance.now();
+    modelRoot.position.x = MathUtils.damp(
+      modelRoot.position.x,
+      config.modelTransform.position[0],
+      VIEWER_TRANSFORM_DAMPING,
+      delta,
+    );
+    modelRoot.position.y = MathUtils.damp(
+      modelRoot.position.y,
+      config.modelTransform.position[1],
+      VIEWER_TRANSFORM_DAMPING,
+      delta,
+    );
+    modelRoot.position.z = MathUtils.damp(
+      modelRoot.position.z,
+      config.modelTransform.position[2],
+      VIEWER_TRANSFORM_DAMPING,
+      delta,
+    );
+
+    modelTransform.rotation.x = MathUtils.damp(
+      modelTransform.rotation.x,
+      config.modelTransform.rotation[0],
+      VIEWER_TRANSFORM_DAMPING,
+      delta,
+    );
+    modelTransform.rotation.y = MathUtils.damp(
+      modelTransform.rotation.y,
+      config.modelTransform.rotation[1],
+      VIEWER_TRANSFORM_DAMPING,
+      delta,
+    );
+    modelTransform.rotation.z = MathUtils.damp(
+      modelTransform.rotation.z,
+      config.modelTransform.rotation[2],
+      VIEWER_TRANSFORM_DAMPING,
+      delta,
+    );
+
+    const nextScale = MathUtils.damp(
+      modelTransform.scale.x,
+      config.modelTransform.scale,
+      VIEWER_TRANSFORM_DAMPING,
+      delta,
+    );
+    modelTransform.scale.setScalar(nextScale);
+
+    let revealStartedAt = revealStartedAtRef.current;
+    const now = clock.elapsedTime * 1000;
+    if (revealStartedAt === null) {
+      revealStartedAt = now + MODEL_REVEAL_DELAY_MS;
+      revealStartedAtRef.current = revealStartedAt;
+    }
     const revealProgress =
       revealStartedAt === null
         ? 0
@@ -1140,7 +1193,8 @@ function ModelRig({
 
   return (
     <group
-      position={config.modelTransform.position}
+      ref={modelRootRef}
+      position={initialModelTransform.position}
     >
       <group
         ref={interactionRigRef}
@@ -1162,8 +1216,9 @@ function ModelRig({
         >
           <Center>
             <group
-              rotation={config.modelTransform.rotation}
-              scale={config.modelTransform.scale}
+              ref={modelTransformRef}
+              rotation={initialModelTransform.rotation}
+              scale={initialModelTransform.scale}
               onPointerEnter={handleModelPointerEnter}
               onPointerLeave={handleModelPointerLeave}
             >
@@ -1254,6 +1309,45 @@ function ModelRig({
   );
 }
 
+function AnimatedPerspectiveCamera({
+  position,
+  fov,
+}: {
+  position: [number, number, number];
+  fov: number;
+}) {
+  const cameraRef = useRef<ThreePerspectiveCamera | null>(null);
+  const [initialCamera] = useState(() => ({
+    position: [...position] as [number, number, number],
+    fov,
+  }));
+
+  useFrame((_, delta) => {
+    const camera = cameraRef.current;
+    if (!camera) {
+      return;
+    }
+
+    camera.position.x = MathUtils.damp(camera.position.x, position[0], VIEWER_CAMERA_DAMPING, delta);
+    camera.position.y = MathUtils.damp(camera.position.y, position[1], VIEWER_CAMERA_DAMPING, delta);
+    camera.position.z = MathUtils.damp(camera.position.z, position[2], VIEWER_CAMERA_DAMPING, delta);
+    const nextFov = MathUtils.damp(camera.fov, fov, VIEWER_CAMERA_DAMPING, delta);
+    if (Math.abs(nextFov - camera.fov) > 0.0001) {
+      camera.fov = nextFov;
+      camera.updateProjectionMatrix();
+    }
+  });
+
+  return (
+    <PerspectiveCamera
+      ref={cameraRef}
+      makeDefault
+      position={initialCamera.position}
+      fov={initialCamera.fov}
+    />
+  );
+}
+
 export function GameboyModelViewer({
   modelUrl,
   fullScreen,
@@ -1281,15 +1375,26 @@ export function GameboyModelViewer({
 }) {
   const [dragging, setDragging] = useState(false);
   const [hoveringControl, setHoveringControl] = useState(false);
-  const [revealVisible, setRevealVisible] = useState(false);
   const dragRotationRef = useRef(new Vector2(0, 0));
   const pointerRotationRef = useRef(new Vector2(0, 0));
   const dragStartRef = useRef<Vector2 | null>(null);
   const pointerInteractionRef = useRef(new Map<number, PointerInteractionType>());
+  const pointerFollowIdleTimeoutRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    setRevealVisible(false);
-  }, [modelUrl]);
+  const clearPointerFollowIdleTimeout = useCallback(() => {
+    if (pointerFollowIdleTimeoutRef.current !== null) {
+      window.clearTimeout(pointerFollowIdleTimeoutRef.current);
+      pointerFollowIdleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const schedulePointerFollowIdleReset = useCallback(() => {
+    clearPointerFollowIdleTimeout();
+    pointerFollowIdleTimeoutRef.current = window.setTimeout(() => {
+      pointerRotationRef.current.set(0, 0);
+      pointerFollowIdleTimeoutRef.current = null;
+    }, POINTER_FOLLOW_IDLE_MS);
+  }, [clearPointerFollowIdleTimeout]);
 
   const mappedTexture = useMemo(() => {
     if (!screenTexture) {
@@ -1315,6 +1420,12 @@ export function GameboyModelViewer({
 
   const batteryTextures = useMemo(() => createBatteryIndicatorTextures(), []);
   const screenSurfaceTextures = useMemo(() => createScreenSurfaceTextures(), []);
+
+  useEffect(() => {
+    return () => {
+      clearPointerFollowIdleTimeout();
+    };
+  }, [clearPointerFollowIdleTimeout]);
 
   useEffect(() => {
     return () => {
@@ -1344,6 +1455,78 @@ export function GameboyModelViewer({
     [fullScreen, height, mappedTexture, modelUrl, screenMode, screenTint, viewerConfig],
   );
 
+  useEffect(() => {
+    dragStartRef.current = null;
+    pointerInteractionRef.current.clear();
+    clearPointerFollowIdleTimeout();
+    pointerRotationRef.current.set(0, 0);
+    if (poweredOn) {
+      dragRotationRef.current.set(0, 0);
+    }
+    const resetFrame = window.requestAnimationFrame(() => {
+      setDragging(false);
+      setHoveringControl(false);
+      onModelHoverChange?.(false);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(resetFrame);
+    };
+  }, [clearPointerFollowIdleTimeout, onModelHoverChange, poweredOn]);
+
+  useEffect(() => {
+    if (!poweredOn) {
+      return;
+    }
+
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      if (dragging) {
+        return;
+      }
+
+      for (const interaction of pointerInteractionRef.current.values()) {
+        if (interaction === "control") {
+          return;
+        }
+      }
+
+      const normalizedX = window.innerWidth ? event.clientX / window.innerWidth - 0.5 : 0;
+      const normalizedY = window.innerHeight ? event.clientY / window.innerHeight - 0.5 : 0;
+
+      pointerRotationRef.current.x = MathUtils.clamp(
+        normalizedY * config.motion.pointerFollow.x,
+        -config.motion.pointerFollow.x,
+        config.motion.pointerFollow.x,
+      );
+      pointerRotationRef.current.y = MathUtils.clamp(
+        normalizedX * config.motion.pointerFollow.y,
+        -config.motion.pointerFollow.y,
+        config.motion.pointerFollow.y,
+      );
+      schedulePointerFollowIdleReset();
+    };
+
+    const handleWindowBlur = () => {
+      pointerRotationRef.current.set(0, 0);
+      clearPointerFollowIdleTimeout();
+    };
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("blur", handleWindowBlur);
+
+    return () => {
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, [
+    clearPointerFollowIdleTimeout,
+    dragging,
+    poweredOn,
+    schedulePointerFollowIdleReset,
+    config.motion.pointerFollow.x,
+    config.motion.pointerFollow.y,
+  ]);
+
   return (
     <div
       style={{
@@ -1355,9 +1538,6 @@ export function GameboyModelViewer({
         overflow: "visible",
         background: "transparent",
         pointerEvents: "auto",
-        opacity: revealVisible ? 1 : 0,
-        transition: "opacity 320ms cubic-bezier(0.22, 1, 0.36, 1)",
-        willChange: "opacity",
       }}
     >
       <Canvas
@@ -1367,10 +1547,10 @@ export function GameboyModelViewer({
           width: "100%",
           height: "100%",
           overflow: "visible",
-          cursor: dragging ? "grabbing" : hoveringControl ? "pointer" : "grab",
+          cursor: dragging ? "grabbing" : poweredOn ? (hoveringControl ? "pointer" : "grab") : "grab",
         }}
         onPointerDown={(event) => {
-          if (pointerInteractionRef.current.get(event.pointerId) === "control") {
+          if (poweredOn && pointerInteractionRef.current.get(event.pointerId) === "control") {
             return;
           }
 
@@ -1379,15 +1559,25 @@ export function GameboyModelViewer({
           setDragging(true);
         }}
         onPointerMove={(event) => {
+          if (!poweredOn) {
+            if (dragging && dragStartRef.current) {
+              const deltaX = event.clientX - dragStartRef.current.x;
+              const deltaY = event.clientY - dragStartRef.current.y;
+              dragRotationRef.current.y += deltaX * config.motion.dragSensitivity.y;
+              dragRotationRef.current.x += deltaY * config.motion.dragSensitivity.x;
+              dragStartRef.current.set(event.clientX, event.clientY);
+            }
+            return;
+          }
+
           if (pointerInteractionRef.current.get(event.pointerId) === "control") {
             return;
           }
 
-          const bounds = event.currentTarget.getBoundingClientRect();
-          const normalizedX = bounds.width ? (event.clientX - bounds.left) / bounds.width - 0.5 : 0;
-          const normalizedY = bounds.height ? (event.clientY - bounds.top) / bounds.height - 0.5 : 0;
-
           if (!dragging) {
+            const normalizedX = window.innerWidth ? event.clientX / window.innerWidth - 0.5 : 0;
+            const normalizedY = window.innerHeight ? event.clientY / window.innerHeight - 0.5 : 0;
+
             pointerRotationRef.current.x = MathUtils.clamp(
               normalizedY * config.motion.pointerFollow.x,
               -config.motion.pointerFollow.x,
@@ -1398,6 +1588,7 @@ export function GameboyModelViewer({
               -config.motion.pointerFollow.y,
               config.motion.pointerFollow.y,
             );
+            schedulePointerFollowIdleReset();
           }
 
           if (dragging && dragStartRef.current) {
@@ -1418,13 +1609,19 @@ export function GameboyModelViewer({
           pointerInteractionRef.current.delete(event.pointerId);
           setDragging(false);
           dragStartRef.current = null;
-          dragRotationRef.current.set(0, 0);
+          if (poweredOn) {
+            dragRotationRef.current.set(0, 0);
+          }
+          clearPointerFollowIdleTimeout();
         }}
         onPointerCancel={(event) => {
           pointerInteractionRef.current.delete(event.pointerId);
           setDragging(false);
           dragStartRef.current = null;
-          dragRotationRef.current.set(0, 0);
+          if (poweredOn) {
+            dragRotationRef.current.set(0, 0);
+          }
+          clearPointerFollowIdleTimeout();
         }}
         onPointerLeave={() => {
           pointerInteractionRef.current.clear();
@@ -1432,12 +1629,14 @@ export function GameboyModelViewer({
           setHoveringControl(false);
           onModelHoverChange?.(false);
           dragStartRef.current = null;
-          dragRotationRef.current.set(0, 0);
+          if (poweredOn) {
+            dragRotationRef.current.set(0, 0);
+          }
           pointerRotationRef.current.set(0, 0);
+          clearPointerFollowIdleTimeout();
         }}
       >
-        <PerspectiveCamera
-          makeDefault
+        <AnimatedPerspectiveCamera
           position={config.initialCamera.position}
           fov={config.initialCamera.fov}
         />
@@ -1465,7 +1664,6 @@ export function GameboyModelViewer({
             pointerInteraction={pointerInteractionRef}
             onControlHoverChange={setHoveringControl}
             onModelHoverChange={onModelHoverChange}
-            onRevealStart={() => setRevealVisible(true)}
           />
           <Environment preset="warehouse" />
         </Suspense>

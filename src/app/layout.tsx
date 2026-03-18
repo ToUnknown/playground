@@ -79,6 +79,15 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        <link
+          rel="preload"
+          href="/tetris-gameboy-assets/font.ttf"
+          as="font"
+          type="font/ttf"
+          crossOrigin="anonymous"
+        />
+      </head>
       <body className={`${rajdhani.variable} ${plexSans.variable}`}>
         <AppProviders initialThemeId={sessionUser?.themeId}>{children}</AppProviders>
       </body>

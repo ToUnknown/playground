@@ -29,9 +29,10 @@ export type GameboyAudioCue =
   | "snakeEat"
   | "tetrisLock"
   | "tetrisLineClear"
+  | "tetrisGameOver"
   | "gameOver";
 
-export type GameboyMusicTrack = "menu" | "tetris" | "snake";
+export type GameboyMusicTrack = "menu" | "snake" | "blackjack" | "tetris" | "tetrisTitle";
 
 type SoundConfig = {
   src: string;
@@ -42,6 +43,7 @@ type SoundConfig = {
 type MusicConfig = {
   sources: string[];
   volume: number;
+  playback?: "loop" | "playlist";
 };
 
 const SOUND_LIBRARY: Record<GameboyAudioCue, SoundConfig> = {
@@ -72,7 +74,7 @@ const SOUND_LIBRARY: Record<GameboyAudioCue, SoundConfig> = {
   },
   menuConfirm: {
     src: "/audio/sfx/beep-a.mp3",
-    volume: 0.32,
+    volume: 0.18,
     playbackRate: 1.06,
   },
   pause: {
@@ -96,8 +98,13 @@ const SOUND_LIBRARY: Record<GameboyAudioCue, SoundConfig> = {
     playbackRate: 0.84,
   },
   tetrisLineClear: {
-    src: "/audio/sfx/line-clear.mp3",
-    volume: 0.36,
+    src: "/audio/tetris/08. Stage Clear.m4a",
+    volume: 0.52,
+    playbackRate: 1,
+  },
+  tetrisGameOver: {
+    src: "/audio/tetris/18. Game Over.m4a",
+    volume: 0.48,
     playbackRate: 1,
   },
   gameOver: {
@@ -120,32 +127,56 @@ const MUSIC_LIBRARY: Record<GameboyMusicTrack, MusicConfig> = {
     ],
     volume: 0.3,
   },
+  blackjack: {
+    sources: ["/audio/music/blackjack-music.m4a"],
+    volume: 0.34,
+  },
+  tetrisTitle: {
+    sources: ["/audio/tetris/01. Title.m4a"],
+    volume: 0.38,
+  },
   tetris: {
-    // Accept a few common filenames for the user-supplied Tetris track.
     sources: [
-      "/audio/music/tetris-theme.ogg",
-      "/audio/music/tetris-theme.mp3",
-      "/audio/music/tetris-theme.wav",
-      "/audio/music/tetris-original.mp3",
-      "/audio/music/tetris-original.ogg",
-      "/audio/music/tetris-original.wav",
+      "/audio/tetris/02. A-Type Music (v1.0).m4a",
+      "/audio/tetris/03. A-Type Music (Korobeiniki).m4a",
+      "/audio/tetris/04. B-Type Music.m4a",
+      "/audio/tetris/05. C-Type Music.m4a",
     ],
-    volume: 0.5,
+    volume: 0.42,
+    playback: "playlist",
   },
 };
+const MUSIC_POWER_OFF_FADE_MS = 180;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function pickRandomPlaylistIndex(length: number, previousIndex: number | null) {
+  if (length <= 1) {
+    return 0;
+  }
+
+  const randomIndex = Math.floor(Math.random() * (length - 1));
+  if (previousIndex === null || previousIndex < 0 || previousIndex >= length) {
+    return randomIndex;
+  }
+
+  return randomIndex >= previousIndex ? randomIndex + 1 : randomIndex;
+}
+
 export function useGameboyAudio({
   soundEnabled,
   musicEnabled,
+  soundVolume,
+  musicVolume,
   poweredOn,
   musicTrack,
 }: {
   soundEnabled: boolean;
   musicEnabled: boolean;
+  soundVolume: number;
+  musicVolume: number;
   poweredOn: boolean;
   musicTrack: GameboyMusicTrack | null;
 }) {
@@ -159,7 +190,9 @@ export function useGameboyAudio({
   const musicLoadPromiseRef = useRef<Map<string, Promise<AudioBuffer>>>(new Map());
   const activeMusicSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const activeMusicTrackRef = useRef<GameboyMusicTrack | null>(null);
-  const resolvedMusicRef = useRef<Map<GameboyMusicTrack, string>>(new Map());
+  const resolvedMusicRef = useRef<Map<GameboyMusicTrack, string[]>>(new Map());
+  const playlistLastIndexRef = useRef<Map<GameboyMusicTrack, number>>(new Map());
+  const musicFadeTimeoutRef = useRef<number | null>(null);
   const musicAnalyserRef = useRef<AnalyserNode | null>(null);
   const musicMeterFrameRef = useRef<number>(0);
   const musicEnergyRef = useRef(0);
@@ -227,8 +260,8 @@ export function useGameboyAudio({
       const sfxGain = context.createGain();
       const musicGain = context.createGain();
       const musicAnalyser = context.createAnalyser();
-      sfxGain.gain.value = soundEnabled ? 1 : 0;
-      musicGain.gain.value = musicEnabled ? 1 : 0;
+      sfxGain.gain.value = soundEnabled ? clamp(soundVolume, 0, 1) : 0;
+      musicGain.gain.value = musicEnabled ? clamp(musicVolume, 0, 1) : 0;
       sfxGain.connect(context.destination);
       musicGain.connect(context.destination);
       musicAnalyser.fftSize = 128;
@@ -242,7 +275,7 @@ export function useGameboyAudio({
     }
 
     return audioContextRef.current;
-  }, [musicEnabled, soundEnabled]);
+  }, [musicEnabled, musicVolume, soundEnabled, soundVolume]);
 
   const loadSoundBuffer = useCallback(
     async (src: string) => {
@@ -301,18 +334,71 @@ export function useGameboyAudio({
     }
   }, [ensureAudioContext]);
 
+  const clearMusicFadeTimeout = useCallback(() => {
+    if (musicFadeTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(musicFadeTimeoutRef.current);
+      musicFadeTimeoutRef.current = null;
+    }
+  }, []);
+
   const stopMusic = useCallback(() => {
+    clearMusicFadeTimeout();
     const activeMusicSource = activeMusicSourceRef.current;
     if (!activeMusicSource) {
       return;
     }
 
     activeMusicSource.onended = null;
-    activeMusicSource.stop();
+    try {
+      activeMusicSource.stop();
+    } catch {
+      // Ignore stop failures for sources that have already ended.
+    }
     activeMusicSource.disconnect();
     activeMusicSourceRef.current = null;
     activeMusicTrackRef.current = null;
-  }, []);
+  }, [clearMusicFadeTimeout]);
+
+  const fadeOutMusic = useCallback((durationMs: number) => {
+    if (musicFadeTimeoutRef.current !== null) {
+      return;
+    }
+
+    const context = audioContextRef.current;
+    const musicGain = musicGainRef.current;
+    const activeMusicSource = activeMusicSourceRef.current;
+    if (!context || !musicGain || !activeMusicSource) {
+      stopMusic();
+      return;
+    }
+
+    const now = context.currentTime;
+    musicGain.gain.cancelScheduledValues(now);
+    musicGain.gain.setValueAtTime(musicGain.gain.value, now);
+    musicGain.gain.linearRampToValueAtTime(0.0001, now + durationMs / 1000);
+
+    musicFadeTimeoutRef.current = window.setTimeout(() => {
+      if (activeMusicSourceRef.current === activeMusicSource) {
+        activeMusicSource.onended = null;
+        try {
+          activeMusicSource.stop();
+        } catch {
+          // Ignore stop failures for sources that have already ended.
+        }
+        activeMusicSource.disconnect();
+        activeMusicSourceRef.current = null;
+        activeMusicTrackRef.current = null;
+      }
+
+      musicFadeTimeoutRef.current = null;
+      const currentContext = audioContextRef.current;
+      const currentMusicGain = musicGainRef.current;
+      if (currentContext && currentMusicGain) {
+        currentMusicGain.gain.cancelScheduledValues(currentContext.currentTime);
+        currentMusicGain.gain.setValueAtTime(0, currentContext.currentTime);
+      }
+    }, durationMs);
+  }, [stopMusic]);
 
   const loadMusicBuffer = useCallback(
     async (src: string) => {
@@ -358,12 +444,13 @@ export function useGameboyAudio({
     [ensureAudioContext],
   );
 
-  const resolveMusicSource = useCallback(async (track: GameboyMusicTrack) => {
-    const cachedSource = resolvedMusicRef.current.get(track);
-    if (cachedSource) {
-      return cachedSource;
+  const resolveMusicSources = useCallback(async (track: GameboyMusicTrack) => {
+    const cachedSources = resolvedMusicRef.current.get(track);
+    if (cachedSources) {
+      return cachedSources;
     }
 
+    const availableSources: string[] = [];
     for (const candidate of MUSIC_LIBRARY[track].sources) {
       try {
         const response = await fetch(candidate, {
@@ -372,15 +459,15 @@ export function useGameboyAudio({
         });
 
         if (response.ok) {
-          resolvedMusicRef.current.set(track, candidate);
-          return candidate;
+          availableSources.push(candidate);
         }
       } catch {
         // Ignore fetch failures and fall through to the next candidate.
       }
     }
 
-    return null;
+    resolvedMusicRef.current.set(track, availableSources);
+    return availableSources;
   }, []);
 
   const playCue = useCallback(
@@ -398,10 +485,6 @@ export function useGameboyAudio({
         return;
       }
 
-      if (context.state === "suspended") {
-        void context.resume().catch(() => undefined);
-      }
-
       const startPlayback = (buffer: AudioBuffer) => {
         const source = context.createBufferSource();
         const gainNode = context.createGain();
@@ -417,12 +500,27 @@ export function useGameboyAudio({
 
       const cachedBuffer = soundBufferRef.current.get(config.src);
       if (cachedBuffer) {
+        if (context.state === "suspended") {
+          void context.resume()
+            .then(() => {
+              startPlayback(cachedBuffer);
+            })
+            .catch(() => undefined);
+          return;
+        }
+
         startPlayback(cachedBuffer);
         return;
       }
 
       void loadSoundBuffer(config.src)
         .then((buffer) => {
+          if (context.state === "suspended") {
+            return context.resume().then(() => {
+              startPlayback(buffer);
+            });
+          }
+
           startPlayback(buffer);
         })
         .catch(() => undefined);
@@ -431,28 +529,49 @@ export function useGameboyAudio({
   );
 
   useEffect(() => {
+    if (!audioUnlocked) {
+      return;
+    }
+
     const context = ensureAudioContext();
     if (!context || !sfxGainRef.current) {
       return;
     }
 
-    sfxGainRef.current.gain.value = soundEnabled ? 1 : 0;
-  }, [ensureAudioContext, soundEnabled]);
+    sfxGainRef.current.gain.value = soundEnabled ? clamp(soundVolume, 0, 1) : 0;
+  }, [audioUnlocked, ensureAudioContext, soundEnabled, soundVolume]);
 
   useEffect(() => {
-    if (!musicGainRef.current) {
+    if (!audioUnlocked) {
+      return;
+    }
+
+    const context = audioContextRef.current;
+    const musicGain = musicGainRef.current;
+    if (!context || !musicGain) {
+      return;
+    }
+
+    clearMusicFadeTimeout();
+    musicGain.gain.cancelScheduledValues(context.currentTime);
+
+    if (!poweredOn) {
       return;
     }
 
     if (!musicEnabled || !musicTrack) {
-      musicGainRef.current.gain.value = 0;
+      musicGain.gain.value = 0;
       return;
     }
 
-    musicGainRef.current.gain.value = MUSIC_LIBRARY[musicTrack].volume;
-  }, [musicEnabled, musicTrack]);
+    musicGain.gain.value = MUSIC_LIBRARY[musicTrack].volume * clamp(musicVolume, 0, 1);
+  }, [audioUnlocked, clearMusicFadeTimeout, musicEnabled, musicTrack, musicVolume, poweredOn]);
 
   useEffect(() => {
+    if (!audioUnlocked) {
+      return;
+    }
+
     const context = ensureAudioContext();
     if (!context) {
       return;
@@ -461,10 +580,20 @@ export function useGameboyAudio({
     for (const { src } of Object.values(SOUND_LIBRARY)) {
       void loadSoundBuffer(src).catch(() => undefined);
     }
-  }, [ensureAudioContext, loadSoundBuffer]);
+  }, [audioUnlocked, ensureAudioContext, loadSoundBuffer]);
 
   useEffect(() => {
-    if (!audioUnlocked || !poweredOn || !musicEnabled || !musicTrack || typeof window === "undefined") {
+    if (!audioUnlocked || typeof window === "undefined") {
+      stopMusic();
+      return;
+    }
+
+    if (!poweredOn) {
+      fadeOutMusic(MUSIC_POWER_OFF_FADE_MS);
+      return;
+    }
+
+    if (!musicEnabled || !musicTrack) {
       stopMusic();
       return;
     }
@@ -472,12 +601,12 @@ export function useGameboyAudio({
     let cancelled = false;
 
     const startMusic = async () => {
-      const src = await resolveMusicSource(musicTrack);
+      const resolvedSources = await resolveMusicSources(musicTrack);
       if (cancelled) {
         return;
       }
 
-      if (!src) {
+      if (resolvedSources.length === 0) {
         stopMusic();
         return;
       }
@@ -488,32 +617,87 @@ export function useGameboyAudio({
         return;
       }
 
-      if (activeMusicTrackRef.current === musicTrack && activeMusicSourceRef.current) {
-        musicGain.gain.value = musicEnabled ? MUSIC_LIBRARY[musicTrack].volume : 0;
-        return;
+      clearMusicFadeTimeout();
+      musicGain.gain.cancelScheduledValues(context.currentTime);
+
+      if (context.state === "suspended") {
+        try {
+          await context.resume();
+        } catch {
+          return;
+        }
       }
 
-      const buffer = await loadMusicBuffer(src);
-      if (cancelled) {
+      if (activeMusicTrackRef.current === musicTrack && activeMusicSourceRef.current) {
+        musicGain.gain.value = musicEnabled
+          ? MUSIC_LIBRARY[musicTrack].volume * clamp(musicVolume, 0, 1)
+          : 0;
         return;
       }
 
       stopMusic();
+      const playback = MUSIC_LIBRARY[musicTrack].playback ?? "loop";
+      const startIndex =
+        playback === "playlist"
+          ? pickRandomPlaylistIndex(
+              resolvedSources.length,
+              playlistLastIndexRef.current.get(musicTrack) ?? null,
+            )
+          : 0;
 
-      const source = context.createBufferSource();
-      source.buffer = buffer;
-      source.loop = true;
-      if (musicAnalyserRef.current) {
-        source.connect(musicAnalyserRef.current);
-      } else {
-        source.connect(musicGain);
-      }
-      source.start();
-      activeMusicSourceRef.current = source;
+      const playResolvedSource = async (index: number) => {
+        const src = resolvedSources[index % resolvedSources.length];
+        if (!src) {
+          return;
+        }
+
+        const buffer = await loadMusicBuffer(src);
+        if (cancelled || activeMusicTrackRef.current !== musicTrack) {
+          return;
+        }
+
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.loop = playback !== "playlist";
+        if (musicAnalyserRef.current) {
+          source.connect(musicAnalyserRef.current);
+        } else {
+          source.connect(musicGain);
+        }
+
+        source.onended = () => {
+          if (activeMusicSourceRef.current === source) {
+            source.disconnect();
+            activeMusicSourceRef.current = null;
+          }
+
+          if (cancelled || activeMusicTrackRef.current !== musicTrack || playback !== "playlist") {
+            return;
+          }
+
+          void playResolvedSource(
+            pickRandomPlaylistIndex(
+              resolvedSources.length,
+              index,
+            ),
+          );
+        };
+
+        activeMusicSourceRef.current = source;
+        activeMusicTrackRef.current = musicTrack;
+        if (playback === "playlist") {
+          playlistLastIndexRef.current.set(musicTrack, index);
+        }
+        source.start();
+      };
+
       activeMusicTrackRef.current = musicTrack;
+      await playResolvedSource(startIndex);
 
       if (musicGain) {
-        musicGain.gain.value = musicEnabled ? MUSIC_LIBRARY[musicTrack].volume : 0;
+        musicGain.gain.value = musicEnabled
+          ? MUSIC_LIBRARY[musicTrack].volume * clamp(musicVolume, 0, 1)
+          : 0;
       }
     };
 
@@ -522,7 +706,7 @@ export function useGameboyAudio({
     return () => {
       cancelled = true;
     };
-  }, [audioUnlocked, ensureAudioContext, loadMusicBuffer, musicEnabled, musicTrack, poweredOn, resolveMusicSource, stopMusic]);
+  }, [audioUnlocked, clearMusicFadeTimeout, ensureAudioContext, fadeOutMusic, loadMusicBuffer, musicEnabled, musicTrack, musicVolume, poweredOn, resolveMusicSources, stopMusic]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -650,13 +834,14 @@ export function useGameboyAudio({
       if (typeof window !== "undefined") {
         window.cancelAnimationFrame(musicMeterFrameRef.current);
       }
+      clearMusicFadeTimeout();
       resetMusicEnergy();
       stopMusic();
       if (audioContextRef.current && audioContextRef.current.state !== "closed") {
         void audioContextRef.current.close().catch(() => undefined);
       }
     };
-  }, [resetMusicEnergy, stopMusic]);
+  }, [clearMusicFadeTimeout, resetMusicEnergy, stopMusic]);
 
   return {
     playCue,
