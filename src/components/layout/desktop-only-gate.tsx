@@ -7,7 +7,7 @@ export function DesktopOnlyGate({ children }: PropsWithChildren) {
       <div className="desktop-only-splash" aria-hidden="true">
         <div className="desktop-only-splash__panel">
           <div className="desktop-only-splash__badge">Desktop Only</div>
-          <h1 className="desktop-only-splash__title">Playdround</h1>
+          <h1 className="desktop-only-splash__title">Playground</h1>
           <p className="desktop-only-splash__copy">This site is made for desktop.</p>
           <div className="desktop-only-splash__device" role="presentation">
             <div className="desktop-only-splash__screen">

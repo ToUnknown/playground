@@ -12,7 +12,7 @@ export type GameboyTetrisAssets = {
 let assetPromise: Promise<GameboyTetrisAssets> | null = null;
 let fontPromise: Promise<void> | null = null;
 const GAMEBOY_FONT_DESCRIPTOR = '16px "Gameboy Tetris"';
-const GAMEBOY_FONT_SAMPLE = "PLAYDROUND";
+const GAMEBOY_FONT_SAMPLE = "PLAYGROUND";
 
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
