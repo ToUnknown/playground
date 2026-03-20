@@ -48,6 +48,9 @@ const HUD_LEFT = 32;
 const HUD_TOP = 14;
 const HUD_WIDTH = SCREEN_WIDTH - HUD_LEFT * 2;
 const HUD_HEIGHT = 42;
+const HUD_PANEL_GAP = 8;
+const HUD_TIME_WIDTH = 96;
+const HUD_SCORE_WIDTH = 112;
 const WALL_WIDTH = 12;
 const WALL_LEFT = BOARD_LEFT - WALL_WIDTH;
 const WALL_RIGHT = BOARD_LEFT + BOARD_SIZE;
@@ -71,6 +74,7 @@ const INITIAL_SNAKE: SnakePoint[] = [
   { x: 7, y: 8 },
   { x: 6, y: 8 },
 ];
+const MAX_PENDING_TURNS = 2;
 
 const SNAKE_DIRECTIONS: Record<
   Extract<GameboyControlButton, "up" | "down" | "left" | "right">,
@@ -368,8 +372,9 @@ function drawSnakeScene(args: {
     direction,
   } = args;
   const boardRight = BOARD_LEFT + BOARD_SIZE;
-  const sizeValue = formatValue(snake.length);
   const scoreValue = String(score).padStart(3, "0");
+  const hudPanelsWidth = HUD_TIME_WIDTH + HUD_PANEL_GAP + HUD_SCORE_WIDTH;
+  const hudStart = HUD_LEFT + Math.floor((HUD_WIDTH - hudPanelsWidth) / 2);
 
   if (status === "ready") {
     drawSnakeSplash(context);
@@ -383,15 +388,14 @@ function drawSnakeScene(args: {
   context.fillRect(HUD_LEFT - 8, HUD_TOP - 6, HUD_WIDTH + 16, HUD_HEIGHT + 16);
   context.fillRect(BOARD_LEFT - 20, BOARD_TOP - 8, BOARD_SIZE + 40, BOARD_SIZE + 20);
 
-  drawPanel(context, "SIZE", sizeValue, HUD_LEFT, HUD_TOP, 56);
-  drawPanel(context, "RUN", formatDuration(runtimeMs), HUD_LEFT + 64, HUD_TOP, 78);
+  drawPanel(context, "TIME", formatDuration(runtimeMs), hudStart, HUD_TOP, HUD_TIME_WIDTH);
   drawPanel(
     context,
     "SCORE",
     scoreValue,
-    HUD_LEFT + 150,
+    hudStart + HUD_TIME_WIDTH + HUD_PANEL_GAP,
     HUD_TOP,
-    HUD_WIDTH - 150,
+    HUD_SCORE_WIDTH,
   );
 
   drawWallRow(context, assets, WALL_LEFT, WALL_TOP, WALL_OUTER_WIDTH);
@@ -460,7 +464,7 @@ export function GameboySnake({
 }: GameboySnakeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const directionRef = useRef<SnakeDirection>({ x: 1, y: 0 });
-  const queuedRef = useRef<SnakeDirection>({ x: 1, y: 0 });
+  const pendingTurnsRef = useRef<SnakeDirection[]>([]);
   const snakeRef = useRef<SnakePoint[]>(createInitialSnake());
   const foodRef = useRef<SnakePoint | null>(randomSnakeFood(INITIAL_SNAKE));
   const scoreRef = useRef(0);
@@ -500,7 +504,7 @@ export function GameboySnake({
 
   const resetGame = () => {
     directionRef.current = { x: 1, y: 0 };
-    queuedRef.current = { x: 1, y: 0 };
+    pendingTurnsRef.current = [];
     snakeRef.current = createInitialSnake();
     foodRef.current = randomSnakeFood(snakeRef.current);
     scoreRef.current = 0;
@@ -577,9 +581,18 @@ export function GameboySnake({
         return;
       }
 
-      if (!isOppositeDirection(directionRef.current, nextDirection)) {
-        queuedRef.current = nextDirection;
+      const pendingTurns = pendingTurnsRef.current;
+      const lastQueuedDirection = pendingTurns[pendingTurns.length - 1] ?? directionRef.current;
+      const isDuplicateDirection = samePoint(lastQueuedDirection, nextDirection);
+      if (
+        isDuplicateDirection ||
+        isOppositeDirection(lastQueuedDirection, nextDirection) ||
+        pendingTurns.length >= MAX_PENDING_TURNS
+      ) {
+        return;
       }
+
+      pendingTurns.push(nextDirection);
     },
     { ignoreInitialPulse: true },
   );
@@ -599,7 +612,7 @@ export function GameboySnake({
     let stopped = false;
 
     const step = () => {
-      directionRef.current = queuedRef.current;
+      directionRef.current = pendingTurnsRef.current.shift() ?? directionRef.current;
       const snake = snakeRef.current;
       const nextHead = {
         x: snake[0]!.x + directionRef.current.x,

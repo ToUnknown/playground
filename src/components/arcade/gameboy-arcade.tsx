@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
+import { flushSync } from "react-dom";
 
 import type {
   GameboyControlButton,
@@ -74,6 +75,7 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
   const [logoutPhase, setLogoutPhase] = useState<"idle" | "poweringOff" | "fading">("idle");
   const [backgroundVisible, setBackgroundVisible] = useState(false);
   const controlSourcesRef = useRef<Map<GameboyControlButton, Set<string>>>(new Map());
+  const controlPulseSeqRef = useRef(0);
   const { playCue, unlockAudio } = useGameboyAudio({
     soundEnabled: soundLevel > 0,
     musicEnabled: musicLevel > 0,
@@ -89,6 +91,7 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
 
   const resetControlState = useCallback(() => {
     controlSourcesRef.current.clear();
+    controlPulseSeqRef.current = 0;
     setPressedButtons({});
     setControlPulse(null);
   }, []);
@@ -175,27 +178,29 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
       );
     }
 
-    setPressedButtons((current) => {
-      if (isPressed) {
-        return {
-          ...current,
-          [button]: true,
-        };
-      }
+    flushSync(() => {
+      setPressedButtons((current) => {
+        if (isPressed) {
+          return {
+            ...current,
+            [button]: true,
+          };
+        }
 
-      if (!current[button]) {
-        return current;
-      }
+        if (!current[button]) {
+          return current;
+        }
 
-      const next = { ...current };
-      delete next[button];
-      return next;
-    });
+        const next = { ...current };
+        delete next[button];
+        return next;
+      });
 
-    setControlPulse({
-      button,
-      pressed: isPressed,
-      seq: Date.now() + Math.random(),
+      setControlPulse({
+        button,
+        pressed: isPressed,
+        seq: (controlPulseSeqRef.current += 1),
+      });
     });
   };
 
@@ -215,6 +220,18 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
   }, []);
 
   useEffect(() => {
+    const codeMap: Record<string, GameboyControlButton | undefined> = {
+      ArrowUp: "up",
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      Enter: "start",
+      ShiftLeft: "select",
+      ShiftRight: "select",
+      KeyA: "a",
+      KeyB: "b",
+    };
+
     const keyMap: Record<string, GameboyControlButton | undefined> = {
       ArrowUp: "up",
       ArrowDown: "down",
@@ -223,11 +240,12 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
       Enter: "start",
       Shift: "select",
       a: "a",
-      A: "a",
       b: "b",
-      B: "b",
-      x: "b",
-      X: "b",
+    };
+
+    const getControlButton = (event: KeyboardEvent) => {
+      const normalizedKey = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      return codeMap[event.code] ?? keyMap[normalizedKey];
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -236,7 +254,9 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
         return;
       }
 
-      if ((event.key === "p" || event.key === "P") && !poweredOn) {
+      const normalizedKey = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+      if ((event.code === "KeyP" || normalizedKey === "p") && !poweredOn) {
         if (event.repeat) {
           event.preventDefault();
           return;
@@ -251,7 +271,7 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
         return;
       }
 
-      if ((event.key === "z" || event.key === "Z") && poweredOn) {
+      if ((event.code === "KeyZ" || normalizedKey === "z") && poweredOn) {
         if (event.repeat) {
           event.preventDefault();
           return;
@@ -266,7 +286,7 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
         return;
       }
 
-      const button = keyMap[event.key];
+      const button = getControlButton(event);
       if (!button) {
         return;
       }
@@ -277,7 +297,7 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
       }
 
       event.preventDefault();
-      applyControlStateEvent(button, true, `keyboard:${event.key}`);
+      applyControlStateEvent(button, true, `keyboard:${event.code}`);
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
@@ -290,13 +310,13 @@ export function GameboyArcade({ sessionUser }: { sessionUser: SessionUser | null
         return;
       }
 
-      const button = keyMap[event.key];
+      const button = getControlButton(event);
       if (!button) {
         return;
       }
 
       event.preventDefault();
-      applyControlStateEvent(button, false, `keyboard:${event.key}`);
+      applyControlStateEvent(button, false, `keyboard:${event.code}`);
     };
 
     window.addEventListener("keydown", onKeyDown);

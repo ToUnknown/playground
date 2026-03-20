@@ -279,7 +279,7 @@ function mapArcadePulseToInput(button: ExternalGameboyPulse["button"]) {
     return "rotate" satisfies TetrisInput;
   }
   if (button === "a") {
-    return "hold" satisfies TetrisInput;
+    return "rotateCounter" satisfies TetrisInput;
   }
   if (button === "b") {
     return "hardDrop" satisfies TetrisInput;
@@ -292,31 +292,27 @@ function mapArcadePulseToInput(button: ExternalGameboyPulse["button"]) {
 }
 
 function mapKeyboardToInput(event: KeyboardEvent) {
-  if (event.key === "ArrowLeft") {
+  const normalizedKey = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+  if (event.code === "ArrowLeft" || normalizedKey === "ArrowLeft") {
     return "left" satisfies TetrisInput;
   }
-  if (event.key === "ArrowRight") {
+  if (event.code === "ArrowRight" || normalizedKey === "ArrowRight") {
     return "right" satisfies TetrisInput;
   }
-  if (event.key === "ArrowDown") {
+  if (event.code === "ArrowDown" || normalizedKey === "ArrowDown") {
     return "down" satisfies TetrisInput;
   }
-  if (event.key === "ArrowUp") {
+  if (event.code === "ArrowUp" || normalizedKey === "ArrowUp") {
     return "rotate" satisfies TetrisInput;
   }
-  if (event.key === "a" || event.key === "A") {
-    return "hold" satisfies TetrisInput;
+  if (event.code === "KeyA" || normalizedKey === "a") {
+    return "rotateCounter" satisfies TetrisInput;
   }
-  if (event.key === "b" || event.key === "B") {
+  if (event.code === "KeyB" || normalizedKey === "b") {
     return "hardDrop" satisfies TetrisInput;
   }
-  if (event.key === "c" || event.key === "C") {
-    return "hold" satisfies TetrisInput;
-  }
-  if (event.key === " " || event.key === "x" || event.key === "X") {
-    return "hardDrop" satisfies TetrisInput;
-  }
-  if (event.key === "Enter") {
+  if (event.code === "Enter" || normalizedKey === "Enter") {
     return "start" satisfies TetrisInput;
   }
 
@@ -675,13 +671,13 @@ function TetrisGameCanvas({
     const pressedKeys = new Set<string>();
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowDown") {
+      if (event.code === "ArrowDown") {
         event.preventDefault();
-        if (event.repeat || pressedKeys.has(event.key)) {
+        if (event.repeat || pressedKeys.has(event.code)) {
           return;
         }
 
-        pressedKeys.add(event.key);
+        pressedKeys.add(event.code);
         startSoftDrop();
         return;
       }
@@ -696,12 +692,12 @@ function TetrisGameCanvas({
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key !== "ArrowDown") {
+      if (event.code !== "ArrowDown") {
         return;
       }
 
       event.preventDefault();
-      pressedKeys.delete(event.key);
+      pressedKeys.delete(event.code);
       stopSoftDrop();
     };
 

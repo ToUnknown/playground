@@ -122,6 +122,7 @@ export function ArcadeStage({
   const [screenCanvas, setScreenCanvas] = useState<HTMLCanvasElement | null>(null);
   const [screenPhase, setScreenPhase] = useState<ScreenPhase>("off");
   const [screenVisible, setScreenVisible] = useState(false);
+  const [modelReady, setModelReady] = useState(false);
   const [bootFinished, setBootFinished] = useState(false);
   const [menuAssetsReady, setMenuAssetsReady] = useState(false);
   const [menuBalance, setMenuBalance] = useState<number | null>(sessionUser ? null : DEFAULT_MENU_BALANCE);
@@ -191,6 +192,17 @@ export function ArcadeStage({
       };
     }
 
+    if (!modelReady) {
+      resetFrame = window.requestAnimationFrame(() => {
+        setBootFinished(false);
+        setScreenVisible(false);
+        setScreenPhase("off");
+      });
+      return () => {
+        window.cancelAnimationFrame(resetFrame);
+      };
+    }
+
     fadeInFrame = window.requestAnimationFrame(() => {
       setScreenPhase("boot");
       setScreenVisible(true);
@@ -211,7 +223,7 @@ export function ArcadeStage({
       window.clearTimeout(bootTimer);
       window.clearTimeout(offTimer);
     };
-  }, [poweredOn]);
+  }, [modelReady, poweredOn]);
 
   useEffect(() => {
     if (!poweredOn) {
@@ -319,8 +331,8 @@ export function ArcadeStage({
   }, [poweredOn, screenPhase, sessionUser]);
 
   useEffect(() => {
-    onBackgroundReadyChange?.(poweredOn && (screenPhase === "menu" || screenPhase === "game"));
-  }, [onBackgroundReadyChange, poweredOn, screenPhase]);
+    onBackgroundReadyChange?.(poweredOn && modelReady && (screenPhase === "menu" || screenPhase === "game"));
+  }, [modelReady, onBackgroundReadyChange, poweredOn, screenPhase]);
 
   useEffect(() => {
     if (!poweredOn || screenPhase === "off") {
@@ -652,6 +664,7 @@ export function ArcadeStage({
         ) : screenPhase === "game" && selectedGameId === "blackjack" ? (
           <ArcadeGameboyBlackjack
             controlPulse={controlPulse}
+            pressedButtons={pressedButtons}
             onExit={() => {
               setMenuScreen("games");
               setScreenPhase("menu");
@@ -688,6 +701,7 @@ export function ArcadeStage({
           pressedButtons={pressedButtons}
           onControlButtonChange={onControlButtonChange}
           onModelHoverChange={onModelHoverChange}
+          onModelReadyChange={setModelReady}
           viewerConfig={viewerConfig}
         />
       </div>

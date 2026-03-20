@@ -2,7 +2,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
-import type { GameboyControlPulse } from "@/components/arcade/gameboy-games";
+import type { GameboyControlPulse, GameboyPressedButtons } from "@/components/arcade/gameboy-games";
 import {
   getBlackjackCardAssetKey,
   loadGameboyBlackjackAssets,
@@ -26,6 +26,7 @@ import {
 
 type ArcadeGameboyBlackjackProps = {
   controlPulse: GameboyControlPulse | null;
+  pressedButtons: GameboyPressedButtons;
   sessionUser: SessionUser | null;
   onExit: () => void;
   ignoredPulseSeq?: number | null;
@@ -68,6 +69,8 @@ const SCREEN_PANEL = GAMEBOY_TETRIS_LIGHT;
 const HINT_TOP = 18;
 const HINT_LEFT = 14;
 const HINT_CENTER = SCREEN_WIDTH / 2;
+const BET_REPEAT_DELAY_MS = 220;
+const BET_REPEAT_INTERVAL_MS = 85;
 const HINT_RIGHT = SCREEN_WIDTH - 14;
 const DEALER_ROW_Y = 56;
 const PLAYER_ROW_Y = 146;
@@ -576,6 +579,7 @@ function drawBlackjackScene(
 
 export function ArcadeGameboyBlackjack({
   controlPulse,
+  pressedButtons,
   sessionUser,
   onExit,
   ignoredPulseSeq,
@@ -758,6 +762,23 @@ export function ArcadeGameboyBlackjack({
     persistBank(state.bank);
   }, [state]);
 
+  const adjustBet = useEffectEvent((delta: number) => {
+    if (!bankReady) {
+      return;
+    }
+
+    setState((current) => {
+      if (current.phase !== "betting") {
+        return current;
+      }
+
+      return {
+        ...current,
+        bet: clampBet(current.bet + delta, current.bank),
+      };
+    });
+  });
+
   const handleControlPulse = useEffectEvent((pulse: GameboyControlPulse) => {
     if (!bankReady) {
       return;
@@ -772,30 +793,12 @@ export function ArcadeGameboyBlackjack({
     }
 
     if (pulse.button === "up") {
-      setState((current) => {
-        if (current.phase !== "betting") {
-          return current;
-        }
-
-        return {
-          ...current,
-          bet: clampBet(current.bet + 10, current.bank),
-        };
-      });
+      adjustBet(10);
       return;
     }
 
     if (pulse.button === "down") {
-      setState((current) => {
-        if (current.phase !== "betting") {
-          return current;
-        }
-
-        return {
-          ...current,
-          bet: clampBet(current.bet - 10, current.bank),
-        };
-      });
+      adjustBet(-10);
       return;
     }
 
@@ -880,6 +883,32 @@ export function ArcadeGameboyBlackjack({
     lastPulseRef.current = controlPulse.seq;
     handleControlPulse(controlPulse);
   }, [controlPulse]);
+
+  useEffect(() => {
+    if (!bankReady || state.phase !== "betting") {
+      return;
+    }
+
+    const holdingUp = Boolean(pressedButtons.up);
+    const holdingDown = Boolean(pressedButtons.down);
+    if (holdingUp === holdingDown) {
+      return;
+    }
+
+    const delta = holdingUp ? 10 : -10;
+    let intervalId = 0;
+    const timeoutId = window.setTimeout(() => {
+      adjustBet(delta);
+      intervalId = window.setInterval(() => {
+        adjustBet(delta);
+      }, BET_REPEAT_INTERVAL_MS);
+    }, BET_REPEAT_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [bankReady, pressedButtons.down, pressedButtons.up, state.phase]);
 
   return (
     <canvas

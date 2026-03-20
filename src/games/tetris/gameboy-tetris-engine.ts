@@ -31,6 +31,7 @@ export type TetrisInput =
   | "right"
   | "down"
   | "rotate"
+  | "rotateCounter"
   | "hold"
   | "hardDrop"
   | "start"
@@ -134,9 +135,17 @@ function createPiece(type: TetrisPieceType): TetrisPieceState {
   };
 }
 
-function rotateMatrix(type: TetrisPieceType, matrix: boolean[][]) {
+function rotateMatrix(type: TetrisPieceType, matrix: boolean[][], direction: "clockwise" | "counterclockwise" = "clockwise") {
   if (type === "o") {
     return cloneMatrix(matrix);
+  }
+
+  if (direction === "counterclockwise") {
+    let rotated = cloneMatrix(matrix);
+    for (let turns = 0; turns < 3; turns += 1) {
+      rotated = rotateMatrix(type, rotated, "clockwise");
+    }
+    return rotated;
   }
 
   const limit = type === "i" ? matrix.length : matrix.length - 1;
@@ -340,8 +349,12 @@ export class GameboyTetrisEngine {
       return;
     }
 
-    if (input === "rotate") {
-      const rotated = rotateMatrix(this.currentPiece.type, this.currentPiece.matrix);
+    if (input === "rotate" || input === "rotateCounter") {
+      const rotated = rotateMatrix(
+        this.currentPiece.type,
+        this.currentPiece.matrix,
+        input === "rotateCounter" ? "counterclockwise" : "clockwise",
+      );
       const rotatedPiece = {
         ...this.currentPiece,
         matrix: rotated,

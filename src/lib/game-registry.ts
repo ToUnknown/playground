@@ -42,9 +42,9 @@ export const gameRegistry: GameManifest[] = [
     thumbnail: "T-02",
     accent: "#ffd05f",
     controls: [
-      "Arrow keys move and rotate",
-      "C or A holds the current piece",
-      "Space, X, or B hard drops",
+      "Arrow keys move, and Up rotates clockwise",
+      "A rotates counterclockwise",
+      "B hard drops",
       "Enter or Start begins, pauses, and restarts",
       "Z toggles zoom",
     ],

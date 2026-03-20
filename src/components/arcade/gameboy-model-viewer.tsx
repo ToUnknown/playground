@@ -704,9 +704,11 @@ function ModelRig({
   config,
   dragRotation,
   pointerRotation,
+  revealActive,
   poweredOn,
   pressedButtons,
   onControlButtonChange,
+  onModelReady,
   batteryTextures,
   screenSurfaceTextures,
   pointerInteraction,
@@ -717,9 +719,11 @@ function ModelRig({
   config: GameboyViewerConfig;
   dragRotation: RefObject<Vector2>;
   pointerRotation: RefObject<Vector2>;
+  revealActive: boolean;
   poweredOn: boolean;
   pressedButtons: GameboyPressedButtons;
   onControlButtonChange?: (button: GameboyControlButton, pressed: boolean, sourceId: string) => void;
+  onModelReady?: () => void;
   batteryTextures: ReturnType<typeof createBatteryIndicatorTextures>;
   screenSurfaceTextures: ReturnType<typeof createScreenSurfaceTextures>;
   pointerInteraction: RefObject<Map<number, PointerInteractionType>>;
@@ -757,6 +761,10 @@ function ModelRig({
     settledRotationRef.current.set(0, 0);
     revealStartedAtRef.current = null;
   }, [modelUrl]);
+
+  useEffect(() => {
+    onModelReady?.();
+  }, [onModelReady]);
 
   const modelParts = useMemo(() => {
     return splitInteractiveModel(scene);
@@ -1076,45 +1084,58 @@ function ModelRig({
     );
     modelTransform.scale.setScalar(nextScale);
 
-    let revealStartedAt = revealStartedAtRef.current;
-    const now = clock.elapsedTime * 1000;
-    if (revealStartedAt === null) {
-      revealStartedAt = now + MODEL_REVEAL_DELAY_MS;
-      revealStartedAtRef.current = revealStartedAt;
+    let interactionWeight = 0;
+
+    if (!revealActive) {
+      revealStartedAtRef.current = null;
+      revealRig.rotation.x = INITIAL_REVEAL_POSE.rotationX;
+      revealRig.rotation.y = INITIAL_REVEAL_POSE.rotationY;
+      revealRig.rotation.z = INITIAL_REVEAL_POSE.rotationZ;
+      revealRig.position.x = INITIAL_REVEAL_POSE.offsetX;
+      revealRig.position.y = -INITIAL_REVEAL_POSE.offsetY;
+      revealRig.position.z = INITIAL_REVEAL_POSE.offsetZ;
+      revealRig.scale.setScalar(INITIAL_REVEAL_POSE.scale);
+    } else {
+      let revealStartedAt = revealStartedAtRef.current;
+      const now = clock.elapsedTime * 1000;
+      if (revealStartedAt === null) {
+        revealStartedAt = now + MODEL_REVEAL_DELAY_MS;
+        revealStartedAtRef.current = revealStartedAt;
+      }
+      const revealProgress =
+        revealStartedAt === null
+          ? 0
+          : MathUtils.clamp((now - revealStartedAt) / MODEL_REVEAL_DURATION_MS, 0, 1);
+      const revealPose = getRevealPose(revealProgress);
+      const interactionProgress =
+        revealStartedAt === null
+          ? 0
+          : MathUtils.clamp(
+              (now - (revealStartedAt + MODEL_REVEAL_DURATION_MS + MODEL_INTERACTION_DELAY_MS)) /
+                MODEL_INTERACTION_FADE_MS,
+              0,
+              1,
+            );
+      interactionWeight = getInteractionWeight(interactionProgress);
+
+      if (revealProgress >= 1) {
+        revealRig.rotation.set(0, 0, 0);
+        revealRig.position.set(0, 0, 0);
+        revealRig.scale.setScalar(1);
+      } else {
+        revealRig.rotation.x = revealPose.rotationX;
+        revealRig.rotation.y = revealPose.rotationY;
+        revealRig.rotation.z = revealPose.rotationZ;
+        revealRig.position.x = revealPose.offsetX;
+        revealRig.position.y = -revealPose.offsetY;
+        revealRig.position.z = revealPose.offsetZ;
+        revealRig.scale.setScalar(revealPose.scale);
+      }
     }
-    const revealProgress =
-      revealStartedAt === null
-        ? 0
-        : MathUtils.clamp((now - revealStartedAt) / MODEL_REVEAL_DURATION_MS, 0, 1);
-    const revealPose = getRevealPose(revealProgress);
-    const interactionProgress =
-      revealStartedAt === null
-        ? 0
-        : MathUtils.clamp(
-            (now - (revealStartedAt + MODEL_REVEAL_DURATION_MS + MODEL_INTERACTION_DELAY_MS)) /
-              MODEL_INTERACTION_FADE_MS,
-            0,
-            1,
-          );
-    const interactionWeight = getInteractionWeight(interactionProgress);
 
     interactionRig.rotation.x = settledRotationRef.current.x * interactionWeight;
     interactionRig.rotation.y = settledRotationRef.current.y * interactionWeight;
     interactionRig.rotation.z = 0;
-
-    if (revealProgress >= 1) {
-      revealRig.rotation.set(0, 0, 0);
-      revealRig.position.set(0, 0, 0);
-      revealRig.scale.setScalar(1);
-    } else {
-      revealRig.rotation.x = revealPose.rotationX;
-      revealRig.rotation.y = revealPose.rotationY;
-      revealRig.rotation.z = revealPose.rotationZ;
-      revealRig.position.x = revealPose.offsetX;
-      revealRig.position.y = -revealPose.offsetY;
-      revealRig.position.z = revealPose.offsetZ;
-      revealRig.scale.setScalar(revealPose.scale);
-    }
 
     if (buttons.a) {
       buttons.a.position.x = MathUtils.damp(
@@ -1359,6 +1380,7 @@ export function GameboyModelViewer({
   pressedButtons = {},
   onControlButtonChange,
   onModelHoverChange,
+  onModelReadyChange,
   viewerConfig,
 }: {
   modelUrl: string;
@@ -1371,10 +1393,12 @@ export function GameboyModelViewer({
   pressedButtons?: GameboyPressedButtons;
   onControlButtonChange?: (button: GameboyControlButton, pressed: boolean, sourceId: string) => void;
   onModelHoverChange?: (hovering: boolean) => void;
+  onModelReadyChange?: (ready: boolean) => void;
   viewerConfig?: Partial<Omit<GameboyViewerConfig, "modelUrl" | "fullScreen" | "height" | "screen">>;
 }) {
   const [dragging, setDragging] = useState(false);
   const [hoveringControl, setHoveringControl] = useState(false);
+  const [modelReady, setModelReady] = useState(false);
   const dragRotationRef = useRef(new Vector2(0, 0));
   const pointerRotationRef = useRef(new Vector2(0, 0));
   const dragStartRef = useRef<Vector2 | null>(null);
@@ -1428,6 +1452,10 @@ export function GameboyModelViewer({
   }, [clearPointerFollowIdleTimeout]);
 
   useEffect(() => {
+    onModelReadyChange?.(modelReady);
+  }, [modelReady, onModelReadyChange]);
+
+  useEffect(() => {
     return () => {
       batteryTextures?.dotTexture.dispose();
       batteryTextures?.glowTexture.dispose();
@@ -1454,6 +1482,10 @@ export function GameboyModelViewer({
     }),
     [fullScreen, height, mappedTexture, modelUrl, screenMode, screenTint, viewerConfig],
   );
+
+  const handleModelReady = useCallback(() => {
+    setModelReady(true);
+  }, []);
 
   useEffect(() => {
     dragStartRef.current = null;
@@ -1656,9 +1688,11 @@ export function GameboyModelViewer({
             config={config}
             dragRotation={dragRotationRef}
             pointerRotation={pointerRotationRef}
+            revealActive={modelReady}
             poweredOn={poweredOn}
             pressedButtons={pressedButtons}
             onControlButtonChange={onControlButtonChange}
+            onModelReady={handleModelReady}
             batteryTextures={batteryTextures}
             screenSurfaceTextures={screenSurfaceTextures}
             pointerInteraction={pointerInteractionRef}
